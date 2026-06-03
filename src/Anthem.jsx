@@ -143,6 +143,9 @@ const LAUNCH_PROMO = true;
 const LAUNCH_PROMO_PCT = 0.5; // 50% off first year
 // Annual billing gives 2 months free (pay for 10, get 12).
 const ANNUAL_MONTHS_CHARGED = 10;
+// $7 first month intro offer (applies to monthly billing). Flip to false to disable.
+const TRIAL_OFFER = true;
+const TRIAL_PRICE = 7;
 
 /* ============================ ROOT ============================ */
 export default function App() {
@@ -276,6 +279,8 @@ function Landing({ onLaunch }) {
                   color: annual === val ? "#fff" : C.soft }}>
                 {label}{label === "Annual" && <span style={{ fontSize: 11, marginLeft: 6,
                   color: annual === val ? "#fff" : C.teal }}>2 months free</span>}
+                {label === "Monthly" && TRIAL_OFFER && <span style={{ fontSize: 11, marginLeft: 6,
+                  color: annual === val ? "#fff" : C.teal }}>$7 first month</span>}
               </button>
             ))}
           </div>
@@ -315,7 +320,13 @@ function Landing({ onLaunch }) {
                     {!LAUNCH_PROMO && <span>${annualBase}/yr · 2 months free</span>}
                   </div>
                 ) : (
-                  <div style={{ fontSize: 13, color: C.soft, marginTop: 4 }}>billed monthly</div>
+                  <div style={{ fontSize: 13, color: C.soft, marginTop: 4 }}>
+                    {TRIAL_OFFER ? (
+                      <span style={{ color: C.teal, fontWeight: 600 }}>
+                        First month ${TRIAL_PRICE}, then ${p.price}/mo
+                      </span>
+                    ) : "billed monthly"}
+                  </div>
                 )}
               </div>
 
@@ -325,7 +336,7 @@ function Landing({ onLaunch }) {
                 </div>
               ))}
               <button onClick={onLaunch} style={{ ...btn(p.popular ? p.accent : "transparent"), width: "100%", marginTop: 16, justifyContent: "center" }}>
-                {annual && LAUNCH_PROMO ? "Claim launch deal" : "Get started"}
+                {annual && LAUNCH_PROMO ? "Claim launch deal" : (!annual && TRIAL_OFFER ? `Start for $${TRIAL_PRICE}` : "Get started")}
               </button>
             </div>
             );
