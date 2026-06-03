@@ -5,7 +5,7 @@ import {
   TrendingUp, Calendar, DollarSign, Activity, Cpu, Copy, Headphones, Mic2,
   MessageCircle, Wallet, UserCircle, Rocket, Loader2, BarChart3, Music, Link2,
   FileText, Link as LinkIcon, ListChecks, PenTool, Inbox, Award, Mail as MailIcon,
-  ListMusic, Wrench, ArrowLeft
+  ListMusic, Wrench, ArrowLeft, Clock, CalendarPlus, Download
 } from "lucide-react";
 
 /* ============================ THEME — clean & indie, warm ============================ */
@@ -58,6 +58,27 @@ const api = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!r.ok) throw new Error((await r.json()).error || "Streams failed");
+    return r.json();
+  },
+  async listSaved(token) {
+    const r = await fetch(`${API_BASE}/api/saved`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load saved items");
+    return r.json();
+  },
+  async addSaved(token, tool, text) {
+    const r = await fetch(`${API_BASE}/api/saved`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ tool, text }),
+    });
+    if (!r.ok) throw new Error("Could not save");
+    return r.json();
+  },
+  async deleteSaved(token, id) {
+    const r = await fetch(`${API_BASE}/api/saved/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error("Could not delete");
     return r.json();
   },
 };
@@ -116,6 +137,13 @@ const PLANS = [
     features: ["Unlimited artists & agents", "White-label dashboard", "Bring-your-own model keys", "Team seats", "Dedicated success manager"] },
 ];
 
+// ---- Promotions ----
+// Flip LAUNCH_PROMO to false to turn off the 50%-off-first-year launch banner.
+const LAUNCH_PROMO = true;
+const LAUNCH_PROMO_PCT = 0.5; // 50% off first year
+// Annual billing gives 2 months free (pay for 10, get 12).
+const ANNUAL_MONTHS_CHARGED = 10;
+
 /* ============================ ROOT ============================ */
 export default function App() {
   const [view, setView] = useState("landing");
@@ -152,6 +180,7 @@ export default function App() {
 
 /* ============================ LANDING ============================ */
 function Landing({ onLaunch }) {
+  const [annual, setAnnual] = useState(true); // default to annual to show the deal
   return (
     <div>
       <nav style={{ position: "sticky", top: 0, zIndex: 40, backdropFilter: "blur(10px)",
@@ -221,8 +250,45 @@ function Landing({ onLaunch }) {
       {/* Pricing */}
       <section id="pricing" style={{ ...wrap, padding: "56px 0 28px" }}>
         <SectionHead kicker="Plans" title="Pricing that fits your stage" />
+
+        {/* Launch promo banner */}
+        {LAUNCH_PROMO && (
+          <div style={{ ...card, marginBottom: 20, padding: "16px 22px", borderColor: C.rust,
+            background: `linear-gradient(120deg, ${C.cream}, #fdf0e4)`, display: "flex",
+            alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <Sparkles size={20} color={C.rust} />
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ fontWeight: 700 }}>Launch offer — 50% off your first year</div>
+              <div style={{ color: C.soft, fontSize: 13 }}>Limited time for new artists. Lock in half price when you choose annual billing.</div>
+            </div>
+          </div>
+        )}
+
+        {/* Monthly / Annual toggle */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
+          <div style={{ display: "inline-flex", background: C.cream, border: `1px solid ${C.line}`,
+            borderRadius: 30, padding: 4 }}>
+            {[["Monthly", false], ["Annual", true]].map(([label, val]) => (
+              <button key={label} onClick={() => setAnnual(val)}
+                style={{ border: "none", cursor: "pointer", fontFamily: FONT_BODY, fontSize: 14,
+                  fontWeight: 600, padding: "9px 20px", borderRadius: 26,
+                  background: annual === val ? C.rust : "transparent",
+                  color: annual === val ? "#fff" : C.soft }}>
+                {label}{label === "Annual" && <span style={{ fontSize: 11, marginLeft: 6,
+                  color: annual === val ? "#fff" : C.teal }}>2 months free</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 16 }}>
-          {PLANS.map(p => (
+          {PLANS.map(p => {
+            // Annual = pay for 10 months (2 free). Promo = 50% off that first-year total.
+            const annualFull = p.price * 12;
+            const annualBase = p.price * ANNUAL_MONTHS_CHARGED;        // 2 months free
+            const firstYear = LAUNCH_PROMO ? Math.round(annualBase * (1 - LAUNCH_PROMO_PCT)) : annualBase;
+            const perMonthShown = annual ? (firstYear / 12) : p.price;
+            return (
             <div key={p.name} className="lift" style={{ ...card, position: "relative",
               borderColor: p.popular ? p.accent : C.line,
               boxShadow: p.popular ? `0 28px 60px -38px ${p.accent}` : "none" }}>
@@ -230,20 +296,40 @@ function Landing({ onLaunch }) {
                 color: "#fff", fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 20 }}>MOST POPULAR</span>}
               <div style={{ color: p.accent, fontSize: 12, fontWeight: 700, letterSpacing: .6, textTransform: "uppercase" }}>{p.name}</div>
               <div style={{ color: C.soft, fontSize: 13 }}>{p.tag}</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 4, margin: "16px 0" }}>
-                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 46, fontWeight: 600 }}>${p.price}</span>
-                <span style={{ color: C.soft }}>/mo</span>
+
+              <div style={{ margin: "16px 0" }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 46, fontWeight: 600 }}>
+                    ${annual ? perMonthShown.toFixed(0) : p.price}
+                  </span>
+                  <span style={{ color: C.soft }}>/mo</span>
+                </div>
+                {annual ? (
+                  <div style={{ fontSize: 13, color: C.soft, marginTop: 4 }}>
+                    {LAUNCH_PROMO && (
+                      <span style={{ color: C.rust, fontWeight: 600 }}>
+                        ${firstYear}/yr first year{" "}
+                        <span style={{ color: C.soft, textDecoration: "line-through", fontWeight: 400 }}>${annualFull}</span>
+                      </span>
+                    )}
+                    {!LAUNCH_PROMO && <span>${annualBase}/yr · 2 months free</span>}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: C.soft, marginTop: 4 }}>billed monthly</div>
+                )}
               </div>
+
               {p.features.map(f => (
                 <div key={f} style={{ display: "flex", gap: 9, alignItems: "center", color: C.ink, fontSize: 14, padding: "6px 0" }}>
                   <Check size={16} color={p.accent} /> {f}
                 </div>
               ))}
               <button onClick={onLaunch} style={{ ...btn(p.popular ? p.accent : "transparent"), width: "100%", marginTop: 16, justifyContent: "center" }}>
-                Get started
+                {annual && LAUNCH_PROMO ? "Claim launch deal" : "Get started"}
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -345,6 +431,7 @@ function Dashboard({ auth, onExit }) {
   const [tab, setTab] = useState("overview");
   // Artist profile lives here so every agent can read it (the "memory").
   const [profile, setProfile] = useState(null);
+  const [saved, setSaved] = useState([]); // saved tool outputs (lyrics, grants, etc.)
 
   const nav = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -353,6 +440,7 @@ function Dashboard({ auth, onExit }) {
     { id: "tools", label: "Artist Tools", icon: Wrench, color: C.plum },
     ...AGENTS.map(a => ({ id: a.id, label: a.name, icon: a.icon, color: a.color })),
     { id: "profile", label: "Artist Profile", icon: UserCircle },
+    { id: "saved", label: "Saved", icon: Inbox, color: C.clay },
     { id: "referral", label: "Referrals", icon: Gift },
   ];
   return (
@@ -383,10 +471,11 @@ function Dashboard({ auth, onExit }) {
         {tab === "overview" && <Overview onJump={setTab} profile={profile} />}
         {tab === "streams" && <StreamsPanel profile={profile} auth={auth} />}
         {tab === "campaign" && <CampaignPanel auth={auth} profile={profile} onSetup={() => setTab("profile")} />}
-        {tab === "tools" && <ToolsPanel auth={auth} profile={profile} streams={{ months: STREAM_MONTHS, streams: STREAM_VALUES, topTracks: TOP_TRACKS, platforms: PLATFORMS }} />}
+        {tab === "tools" && <ToolsPanel auth={auth} profile={profile} saved={saved} setSaved={setSaved} streams={{ months: STREAM_MONTHS, streams: STREAM_VALUES, topTracks: TOP_TRACKS, platforms: PLATFORMS }} />}
         {tab === "profile" && <ProfilePanel profile={profile} onSave={setProfile} />}
+        {tab === "saved" && <SavedPanel auth={auth} saved={saved} setSaved={setSaved} />}
         {tab === "referral" && <ReferralPanel />}
-        {AGENTS.map(a => tab === a.id && <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} />)}
+        {AGENTS.map(a => tab === a.id && <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} setSaved={setSaved} />)}
       </main>
     </div>
   );
@@ -752,6 +841,12 @@ function CampaignPanel({ auth, profile, onSetup }) {
                   dangerouslySetInnerHTML={{ __html: r.svg.replace(/<svg/, '<svg width="100%" height="100%"') }} />
               )}
               {r?.text && <div style={{ fontSize: 13, lineHeight: 1.55, color: C.ink, whiteSpace: "pre-wrap" }}>{r.text}</div>}
+              {r?.status === "done" && r?.text && (
+                <div style={{ marginTop: 10 }}>
+                  <CopyButton text={r.text} color={s.color} />
+                  {s.id === "social" && <ScheduleReminder defaultTitle="Post this to social" />}
+                </div>
+              )}
               {!r && <div style={{ fontSize: 13, color: C.soft }}>Will draft when you launch.</div>}
             </div>
           );
@@ -858,12 +953,12 @@ const TOOLS = [
     prompt: (p, s, x) => `Build a suggested setlist ordered by energy/tempo flow, plus a day-of-show checklist (load-in, soundcheck, merch, etc.) for: ${x}.${p}${s}` },
 ];
 
-function ToolsPanel({ auth, profile, streams }) {
+function ToolsPanel({ auth, profile, streams, saved, setSaved }) {
   const [open, setOpen] = useState(null); // tool id
 
   if (open) {
     const tool = TOOLS.find(t => t.id === open);
-    return <ToolView tool={tool} auth={auth} profile={profile} streams={streams} onBack={() => setOpen(null)} />;
+    return <ToolView tool={tool} auth={auth} profile={profile} streams={streams} saved={saved} setSaved={setSaved} onBack={() => setOpen(null)} />;
   }
   return (
     <div className="rise">
@@ -916,11 +1011,23 @@ function SmartLinkBuilder({ profile, input }) {
   );
 }
 
-function ToolView({ tool, auth, profile, streams, onBack }) {
+function ToolView({ tool, auth, profile, streams, saved, setSaved, onBack }) {
   const [input, setInput] = useState("");
   const [out, setOut] = useState("");
   const [busy, setBusy] = useState(false);
   const [built, setBuilt] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+
+  function saveOutput() {
+    if (!out) return;
+    const item = { id: Date.now(), tool: tool.name, text: out, when: new Date().toLocaleString() };
+    setSaved?.(list => [item, ...(list || [])]);
+    setJustSaved(true); setTimeout(() => setJustSaved(false), 1500);
+    // Persist to the backend so it survives logout (live mode only).
+    if (api.live() && auth?.token) {
+      api.addSaved(auth.token, tool.name, out).catch(() => {});
+    }
+  }
 
   const pctx = profileToContext(profile);
   const sctx = streams ? `\n\nStreaming context: top tracks ${streams.topTracks.slice(0, 3).map(t => t.title).join(", ")}; recent monthly streams trending ${streams.streams[streams.streams.length - 1] > streams.streams[0] ? "up" : "down"}.` : "";
@@ -976,7 +1083,108 @@ function ToolView({ tool, auth, profile, streams, onBack }) {
         </div>
       )}
       {out && (
-        <div style={{ ...card, whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>{out}</div>
+        <div style={{ ...card }}>
+          {/* EPK shows the artist photo at the top of the press kit */}
+          {tool.id === "epk" && profile?.photo && (
+            <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 16,
+              borderBottom: `1px solid ${C.line}`, paddingBottom: 16 }}>
+              <div style={{ width: 84, height: 84, borderRadius: 12, flexShrink: 0,
+                background: `center/cover url(${profile.photo})`, border: `1px solid ${C.line}` }} />
+              <div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 600 }}>{profile?.name || "Press Kit"}</div>
+                {profile?.genre && <div style={{ color: C.soft, fontSize: 13 }}>{profile.genre}</div>}
+              </div>
+            </div>
+          )}
+          {tool.id === "epk" && !profile?.photo && (
+            <div style={{ fontSize: 13, color: C.soft, marginBottom: 12 }}>
+              Tip: add a photo in your Artist Profile and it'll appear at the top of your EPK.
+            </div>
+          )}
+          <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>{out}</div>
+          <div style={{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <CopyButton text={out} color={tool.color} />
+            <button onClick={saveOutput} style={{ ...btn(justSaved ? C.sage : "transparent"), fontSize: 13, padding: "8px 14px" }}>
+              {justSaved ? <><Check size={15} /> Saved!</> : <><Inbox size={15} /> Save</>}
+            </button>
+            <button onClick={() => downloadText(`${tool.id}-${(profile?.name || "anthem").replace(/\s+/g, "-")}.txt`, out)}
+              style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
+              <Download size={15} /> Download
+            </button>
+            {(tool.id === "newsletter" || tool.id === "checklist") && (
+              <ScheduleReminder defaultTitle={tool.id === "checklist" ? "Release task" : "Send newsletter"} />
+            )}
+          </div>
+          {saved?.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 12, color: C.soft }}>
+              {saved.length} saved item{saved.length > 1 ? "s" : ""} this session
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- Saved items library ---- */
+function SavedPanel({ auth, saved, setSaved }) {
+  const [loading, setLoading] = useState(false);
+
+  // In live mode, load saved items from the backend so they persist across logins.
+  useEffect(() => {
+    if (api.live() && auth?.token) {
+      setLoading(true);
+      api.listSaved(auth.token)
+        .then(d => setSaved((d.items || []).map(i => ({
+          id: i.id, tool: i.tool, text: i.text,
+          when: new Date(i.when).toLocaleString(),
+        }))))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [auth]);
+
+  function remove(id) {
+    setSaved(list => (list || []).filter(s => s.id !== id));
+    if (api.live() && auth?.token) api.deleteSaved(auth.token, id).catch(() => {});
+  }
+
+  return (
+    <div className="rise">
+      <PageTitle title="Saved" sub="Everything you've saved from your tools and agents, in one place." />
+      {loading && <div style={{ color: C.soft, fontSize: 13, marginBottom: 12 }}>Loading your saved items…</div>}
+      {(!saved || saved.length === 0) ? (
+        <div style={{ ...card, textAlign: "center", padding: 40 }}>
+          <Inbox size={32} color={C.soft} style={{ margin: "0 auto 12px" }} />
+          <div style={{ fontWeight: 600 }}>Nothing saved yet</div>
+          <p style={{ color: C.soft, fontSize: 14, marginTop: 6 }}>
+            Use the Save button on any tool or agent reply, and it'll show up here.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          {saved.map(item => (
+            <div key={item.id} style={card}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{item.tool}</span>
+                <span style={{ color: C.soft, fontSize: 12 }}>{item.when}</span>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                  <CopyButton text={item.text} />
+                  <button onClick={() => downloadText(`${(item.tool || "anthem").replace(/\s+/g, "-")}.txt`, item.text)}
+                    style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
+                    <Download size={15} /> Download
+                  </button>
+                  <button onClick={() => remove(item.id)}
+                    style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px", color: C.rust }}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.55, color: C.ink,
+                maxHeight: 160, overflow: "auto" }}>{item.text}</div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -993,7 +1201,7 @@ const AGENT_SYSTEMS = {
   image: "You are Iris, an AI cover-art and promo image maker for musicians. You generate a single self-contained SVG image (viewBox 0 0 400 400) based on the description. Use gradients, shapes, and typography tastefully. Respond with ONLY the raw <svg>...</svg> markup, no backticks, no explanation.",
 };
 
-function AgentPanel({ agent, auth, profile }) {
+function AgentPanel({ agent, auth, profile, setSaved }) {
   const [msgs, setMsgs] = useState([{ role: "assistant", text: agent.sample }]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1080,6 +1288,23 @@ function AgentPanel({ agent, auth, profile }) {
                 width: 280, height: 280, background: "#fff" }}
                 dangerouslySetInnerHTML={{ __html: m.svg.replace(/<svg/, '<svg width="280" height="280"') }} />
             )}
+            {/* Copy + save + schedule actions on assistant text replies */}
+            {m.role !== "user" && m.text && i !== 0 && (
+              <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <CopyButton text={m.text} color={agent.color} />
+                <button onClick={() => {
+                    const item = { id: Date.now(), tool: agent.name, text: m.text, when: new Date().toLocaleString() };
+                    setSaved?.(list => [item, ...(list || [])]);
+                    if (api.live() && auth?.token) api.addSaved(auth.token, agent.name, m.text).catch(() => {});
+                  }}
+                  style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
+                  <Inbox size={15} /> Save
+                </button>
+                {(agent.id === "social" || agent.id === "blog") && (
+                  <ScheduleReminder defaultTitle={agent.id === "social" ? "Post this to social" : "Publish this"} />
+                )}
+              </div>
+            )}
           </div>
         ))}
         {busy && <div style={{ color: C.soft, fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
@@ -1145,6 +1370,69 @@ function ReferralPanel() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ============================ COPY + SCHEDULE HELPERS ============================ */
+// Downloads any text as a .txt file.
+function downloadText(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// One-click copy button for any AI-generated text.
+function CopyButton({ text, color = C.rust, label = "Copy" }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button onClick={() => {
+        navigator.clipboard?.writeText(text);
+        setDone(true); setTimeout(() => setDone(false), 1500);
+      }}
+      style={{ ...btn(done ? C.sage : "transparent"), fontSize: 13, padding: "8px 14px" }}>
+      {done ? <Check size={15} /> : <Copy size={15} />} {done ? "Copied!" : label}
+    </button>
+  );
+}
+
+// Builds a downloadable .ics calendar reminder so a post/task lands on the
+// artist's own calendar (Google/Apple/Outlook all read .ics). No integration needed.
+function downloadReminder(title, dateStr, notes) {
+  const dt = dateStr ? new Date(dateStr) : new Date(Date.now() + 24 * 3600 * 1000);
+  const stamp = d => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const end = new Date(dt.getTime() + 30 * 60 * 1000);
+  const ics = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Anthem//EN", "BEGIN:VEVENT",
+    `UID:${Date.now()}@anthem.fm`, `DTSTAMP:${stamp(new Date())}`,
+    `DTSTART:${stamp(dt)}`, `DTEND:${stamp(end)}`,
+    `SUMMARY:${(title || "Anthem reminder").replace(/\n/g, " ")}`,
+    `DESCRIPTION:${(notes || "").replace(/\n/g, " ")}`,
+    "BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", "DESCRIPTION:Reminder", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR",
+  ].join("\r\n");
+  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = `${(title || "anthem-reminder").slice(0, 30).replace(/\s+/g, "-")}.ics`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// A small inline scheduler: pick a date/time, get a calendar reminder file.
+function ScheduleReminder({ defaultTitle }) {
+  const [when, setWhen] = useState("");
+  const [title, setTitle] = useState(defaultTitle || "Post this to social");
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+      <Clock size={15} color={C.soft} />
+      <input value={title} onChange={e => setTitle(e.target.value)}
+        style={{ ...inp, width: "auto", flex: "1 1 160px", padding: "8px 12px", fontSize: 13 }} />
+      <input type="datetime-local" value={when} onChange={e => setWhen(e.target.value)}
+        style={{ ...inp, width: "auto", padding: "8px 12px", fontSize: 13 }} />
+      <button onClick={() => downloadReminder(title, when, "Created in Anthem")}
+        style={{ ...btn(C.teal), fontSize: 13, padding: "8px 14px" }}>
+        <CalendarPlus size={15} /> Add reminder
+      </button>
     </div>
   );
 }
