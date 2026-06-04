@@ -5,7 +5,7 @@ import {
   TrendingUp, Calendar, DollarSign, Activity, Cpu, Copy, Headphones, Mic2,
   MessageCircle, Wallet, UserCircle, Rocket, Loader2, BarChart3, Music, Link2,
   FileText, Link as LinkIcon, ListChecks, PenTool, Inbox, Award, Mail as MailIcon,
-  ListMusic, Wrench, ArrowLeft, Clock, CalendarPlus, Download
+  ListMusic, Wrench, ArrowLeft, Clock, CalendarPlus, Download, X, Brain
 } from "lucide-react";
 
 /* ============================ THEME — clean & indie, warm ============================ */
@@ -81,6 +81,62 @@ const api = {
     if (!r.ok) throw new Error("Could not delete");
     return r.json();
   },
+  async generateImage(token, prompt, size = "1024x1024") {
+    const r = await fetch(`${API_BASE}/api/image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ prompt, size }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Image generation failed");
+    return r.json(); // { image, usage }
+  },
+  async checkout(token, plan, cycle) {
+    const r = await fetch(`${API_BASE}/api/billing/checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ plan, cycle }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Checkout failed");
+    return r.json(); // { url }
+  },
+  async sales(messages) {
+    const r = await fetch(`${API_BASE}/api/sales`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Assistant unavailable");
+    return r.json(); // { text }
+  },
+  async listBrain(token) {
+    const r = await fetch(`${API_BASE}/api/brain`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load brain");
+    return r.json();
+  },
+  async addBrain(token, kind, label, content) {
+    const r = await fetch(`${API_BASE}/api/brain`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ kind, label, content }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not add");
+    return r.json();
+  },
+  async deleteBrain(token, id) {
+    const r = await fetch(`${API_BASE}/api/brain/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error("Could not delete");
+    return r.json();
+  },
+  async extract(token, name, type, dataBase64) {
+    const r = await fetch(`${API_BASE}/api/extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name, type, dataBase64 }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Couldn't read file");
+    return r.json(); // { text }
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -129,12 +185,12 @@ const AGENTS = [
 ];
 
 const PLANS = [
-  { name: "Indie", price: 29, tag: "Solo & emerging artists", accent: C.teal,
-    features: ["2 active agents", "Cover art generator", "Website chat widget", "Email support"] },
-  { name: "Artist", price: 79, tag: "Working musicians", accent: C.rust, popular: true,
-    features: ["All 8 agents", "Booking & press outreach", "Royalty & contract review", "Multi-AI model routing", "Referral rewards 2x"] },
-  { name: "Label", price: 249, tag: "Managers, labels & studios", accent: C.plum,
-    features: ["Unlimited artists & agents", "White-label dashboard", "Bring-your-own model keys", "Team seats", "Dedicated success manager"] },
+  { name: "Indie", id: "indie", price: 29, tag: "Solo & emerging artists", accent: C.teal,
+    features: ["2 active agents", "35 AI images / mo", "Website chat widget", "Email support"] },
+  { name: "Artist", id: "artist", price: 79, tag: "Working musicians", accent: C.rust, popular: true,
+    features: ["All 8 agents", "100 AI images / mo", "Booking & press outreach", "Royalty & contract review", "Referral rewards 2x"] },
+  { name: "Label", id: "label", price: 249, tag: "Managers, labels & studios", accent: C.plum,
+    features: ["Unlimited artists & agents", "500 AI images / mo", "White-label dashboard", "Team seats", "Dedicated success manager"] },
 ];
 
 // ---- Promotions ----
@@ -151,11 +207,38 @@ const TRIAL_PRICE = 7;
 export default function App() {
   const [view, setView] = useState("landing");
   const [auth, setAuth] = useState(null); // { token, user }
+  const [pendingPlan, setPendingPlan] = useState(null); // { plan, cycle } chosen before login
 
   function launch() {
     // If a backend is configured, require login first; otherwise go straight in (demo).
     if (api.live() && !auth) setView("login");
     else setView("dashboard");
+  }
+
+  // Begin Stripe checkout. If not logged in (and backend live), log in first then resume.
+  async function startCheckout(plan, cycle) {
+    if (!api.live()) { launch(); return; } // demo mode: no real payments
+    if (!auth) { setPendingPlan({ plan, cycle }); setView("login"); return; }
+    try {
+      const { url } = await api.checkout(auth.token, plan, cycle);
+      window.location.href = url;
+    } catch (e) {
+      alert(e.message || "Couldn't start checkout.");
+    }
+  }
+
+  async function afterLogin(a) {
+    setAuth(a);
+    if (pendingPlan) {
+      const { plan, cycle } = pendingPlan;
+      setPendingPlan(null);
+      try {
+        const { url } = await api.checkout(a.token, plan, cycle);
+        window.location.href = url;
+        return;
+      } catch { /* fall through to dashboard */ }
+    }
+    setView("dashboard");
   }
 
   return (
@@ -174,15 +257,90 @@ export default function App() {
         .lift:hover { transform: translateY(-3px); box-shadow: 0 18px 40px -24px rgba(31,26,22,.35); border-color:${C.clay}; }
         .scroll::-webkit-scrollbar{width:8px;} .scroll::-webkit-scrollbar-thumb{background:${C.line};border-radius:8px;}
       `}</style>
-      {view === "landing" && <Landing onLaunch={launch} />}
-      {view === "login" && <Login onAuthed={(a) => { setAuth(a); setView("dashboard"); }} onBack={() => setView("landing")} />}
+      {view === "landing" && <Landing onLaunch={launch} onCheckout={startCheckout} />}
+      {view === "login" && <Login onAuthed={afterLogin} onBack={() => setView("landing")} />}
       {view === "dashboard" && <Dashboard auth={auth} onExit={() => setView("landing")} />}
     </div>
   );
 }
 
+/* ============================ SALES BOT ============================ */
+const SALES_SYSTEM_DEMO = `You are the friendly sales assistant on Anthem's website, an AI studio for music careers. Answer questions about plans and features warmly and briefly, and encourage signup. Plans: Indie $29/mo (2 agents, 35 AI images), Artist $79/mo (all 8 agents, 100 images, most popular), Label $249/mo (unlimited, 500 images, white-label). Annual = 2 months free; launch offer 50% off first year; $7 first month on monthly. 8 agents handle A&R, social, booking, contracts, cover art, press, chat, and finance. Never invent prices or features.`;
+
+function SalesBot() {
+  const [open, setOpen] = useState(false);
+  const [msgs, setMsgs] = useState([{ role: "assistant", text: "Hey! 👋 I'm here to help. Ask me anything about Anthem — plans, features, or how the AI agents work." }]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy, open]);
+
+  async function send() {
+    const q = input.trim();
+    if (!q || busy) return;
+    const next = [...msgs, { role: "user", text: q }];
+    setMsgs(next); setInput(""); setBusy(true);
+    try {
+      const payload = next.map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+      const text = api.live()
+        ? (await api.sales(payload)).text
+        : await directCall(SALES_SYSTEM_DEMO, payload);
+      setMsgs(m => [...m, { role: "assistant", text: text || "…" }]);
+    } catch {
+      setMsgs(m => [...m, { role: "assistant", text: "Sorry, I'm having trouble right now — try again, or just sign up to explore!" }]);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <>
+      {/* Floating bubble */}
+      <button onClick={() => setOpen(o => !o)} aria-label="Chat with us"
+        style={{ position: "fixed", bottom: 22, right: 22, zIndex: 60, width: 58, height: 58,
+          borderRadius: "50%", border: "none", cursor: "pointer", background: C.rust, color: "#fff",
+          boxShadow: "0 10px 30px -8px rgba(31,26,22,.5)", display: "grid", placeItems: "center" }}>
+        {open ? <X size={24} /> : <MessageCircle size={24} />}
+      </button>
+
+      {/* Chat panel */}
+      {open && (
+        <div style={{ position: "fixed", bottom: 92, right: 22, zIndex: 60, width: "min(360px, calc(100vw - 44px))",
+          height: 480, background: C.card, border: `1px solid ${C.line}`, borderRadius: 18,
+          boxShadow: "0 24px 60px -20px rgba(31,26,22,.45)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ background: C.rust, color: "#fff", padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+            <MessageCircle size={18} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>Ask Anthem</div>
+              <div style={{ fontSize: 11, opacity: .85 }}>Usually replies instantly</div>
+            </div>
+          </div>
+          <div className="scroll" style={{ flex: 1, overflow: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+            {msgs.map((m, i) => (
+              <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%",
+                background: m.role === "user" ? C.rust : C.cream, color: m.role === "user" ? "#fff" : C.ink,
+                padding: "10px 13px", borderRadius: 13, fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap",
+                border: m.role === "user" ? "none" : `1px solid ${C.line}` }}>
+                {m.text}
+              </div>
+            ))}
+            {busy && <div style={{ color: C.soft, fontSize: 12 }}>typing…</div>}
+            <div ref={endRef} />
+          </div>
+          <div style={{ display: "flex", gap: 8, padding: 12, borderTop: `1px solid ${C.line}` }}>
+            <input value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && send()} placeholder="Type your question…"
+              style={{ ...inp, padding: "10px 13px", fontSize: 13.5 }} />
+            <button onClick={send} disabled={busy} style={{ ...btn(C.rust), padding: "10px 14px", opacity: busy ? .5 : 1 }}>
+              <Send size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ============================ LANDING ============================ */
-function Landing({ onLaunch }) {
+function Landing({ onLaunch, onCheckout }) {
   const [annual, setAnnual] = useState(true); // default to annual to show the deal
   return (
     <div>
@@ -335,7 +493,7 @@ function Landing({ onLaunch }) {
                   <Check size={16} color={p.accent} /> {f}
                 </div>
               ))}
-              <button onClick={onLaunch} style={{ ...btn(p.popular ? p.accent : "transparent"), width: "100%", marginTop: 16, justifyContent: "center" }}>
+              <button onClick={() => onCheckout(p.id, annual ? "annual" : "monthly")} style={{ ...btn(p.popular ? p.accent : "transparent"), width: "100%", marginTop: 16, justifyContent: "center" }}>
                 {annual && LAUNCH_PROMO ? "Claim launch deal" : (!annual && TRIAL_OFFER ? `Start for $${TRIAL_PRICE}` : "Get started")}
               </button>
             </div>
@@ -375,6 +533,8 @@ function Landing({ onLaunch }) {
       <footer style={{ borderTop: `1px solid ${C.line}`, padding: "26px 0", textAlign: "center", color: C.soft, fontSize: 13 }}>
         <Logo /> <span style={{ marginLeft: 8 }}>© 2026 Anthem — demo build.</span>
       </footer>
+
+      <SalesBot />
     </div>
   );
 }
@@ -451,6 +611,7 @@ function Dashboard({ auth, onExit }) {
     { id: "tools", label: "Artist Tools", icon: Wrench, color: C.plum },
     ...AGENTS.map(a => ({ id: a.id, label: a.name, icon: a.icon, color: a.color })),
     { id: "profile", label: "Artist Profile", icon: UserCircle },
+    { id: "brain", label: "Brain", icon: Brain, color: C.plum },
     { id: "saved", label: "Saved", icon: Inbox, color: C.clay },
     { id: "referral", label: "Referrals", icon: Gift },
   ];
@@ -485,6 +646,7 @@ function Dashboard({ auth, onExit }) {
         {tab === "tools" && <ToolsPanel auth={auth} profile={profile} saved={saved} setSaved={setSaved} streams={{ months: STREAM_MONTHS, streams: STREAM_VALUES, topTracks: TOP_TRACKS, platforms: PLATFORMS }} />}
         {tab === "profile" && <ProfilePanel profile={profile} onSave={setProfile} />}
         {tab === "saved" && <SavedPanel auth={auth} saved={saved} setSaved={setSaved} />}
+        {tab === "brain" && <BrainPanel auth={auth} />}
         {tab === "referral" && <ReferralPanel />}
         {AGENTS.map(a => tab === a.id && <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} setSaved={setSaved} />)}
       </main>
@@ -1137,6 +1299,103 @@ function ToolView({ tool, auth, profile, streams, saved, setSaved, onBack }) {
   );
 }
 
+/* ---- Brain: notes + links that teach the agents about the artist ---- */
+function BrainPanel({ auth }) {
+  const [items, setItems] = useState([]);
+  const [kind, setKind] = useState("note");
+  const [label, setLabel] = useState("");
+  const [content, setContent] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const live = api.live() && auth?.token;
+
+  useEffect(() => {
+    if (live) {
+      setLoading(true);
+      api.listBrain(auth.token).then(d => setItems(d.items || [])).catch(() => {}).finally(() => setLoading(false));
+    }
+  }, [auth]);
+
+  async function add() {
+    if (!content.trim() || busy) return;
+    setBusy(true);
+    const optimistic = { id: Date.now(), kind, label: label || (kind === "link" ? content : "Note"), content, when: new Date().toISOString() };
+    try {
+      if (live) {
+        const { item } = await api.addBrain(auth.token, kind, label, content);
+        setItems(list => [item, ...list]);
+      } else {
+        setItems(list => [optimistic, ...list]);
+      }
+      setLabel(""); setContent("");
+    } catch (e) { alert(e.message || "Couldn't add that."); }
+    finally { setBusy(false); }
+  }
+
+  function remove(id) {
+    setItems(list => list.filter(i => i.id !== id));
+    if (live) api.deleteBrain(auth.token, id).catch(() => {});
+  }
+
+  return (
+    <div className="rise">
+      <PageTitle title="Brain" sub="Teach your agents about you. Everything here feeds every agent so their work sounds like you." />
+
+      <div style={{ ...card, marginBottom: 18 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {[["note", "Add a note"], ["link", "Add a website link"]].map(([k, lbl]) => (
+            <button key={k} onClick={() => setKind(k)}
+              style={{ ...btn(kind === k ? C.plum : "transparent"), fontSize: 13, padding: "8px 14px" }}>{lbl}</button>
+          ))}
+        </div>
+        <input value={label} onChange={e => setLabel(e.target.value)}
+          placeholder={kind === "link" ? "Label (optional, e.g. My website)" : "Label (e.g. My sound, Bio, Influences)"}
+          style={{ ...inp, marginBottom: 8 }} />
+        {kind === "link" ? (
+          <input value={content} onChange={e => setContent(e.target.value)}
+            placeholder="https://your-site.com — I'll read it so the agents know what's there"
+            style={inp} onKeyDown={e => e.key === "Enter" && add()} />
+        ) : (
+          <textarea value={content} onChange={e => setContent(e.target.value)} rows={3}
+            placeholder="Anything you want the agents to know — your story, brand voice, press quotes, song meanings, influences…"
+            style={{ ...inp, resize: "vertical" }} />
+        )}
+        <button onClick={add} disabled={busy} style={{ ...btn(C.plum), marginTop: 12, opacity: busy ? .6 : 1 }}>
+          {busy ? <><Loader2 size={16} className="spin" /> Adding…</> : <><Brain size={16} /> Add to brain</>}
+        </button>
+      </div>
+
+      {loading && <div style={{ color: C.soft, fontSize: 13, marginBottom: 12 }}>Loading your brain…</div>}
+      {items.length === 0 ? (
+        <div style={{ ...card, textAlign: "center", padding: 40 }}>
+          <Brain size={32} color={C.soft} style={{ margin: "0 auto 12px" }} />
+          <div style={{ fontWeight: 600 }}>Your brain is empty</div>
+          <p style={{ color: C.soft, fontSize: 14, marginTop: 6 }}>Add notes and links above. The more you add, the better your agents know you.</p>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {items.map(it => (
+            <div key={it.id} style={card}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: .4,
+                  color: it.kind === "link" ? C.teal : C.plum }}>{it.kind}</span>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{it.label}</span>
+                <button onClick={() => remove(it.id)}
+                  style={{ ...btn("transparent"), marginLeft: "auto", fontSize: 13, padding: "6px 10px", color: C.rust }}>
+                  Remove
+                </button>
+              </div>
+              <div style={{ fontSize: 13, color: C.soft, lineHeight: 1.5, maxHeight: 110, overflow: "auto", whiteSpace: "pre-wrap" }}>
+                {it.content.length > 400 ? it.content.slice(0, 400) + "…" : it.content}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---- Saved items library ---- */
 function SavedPanel({ auth, saved, setSaved }) {
   const [loading, setLoading] = useState(false);
@@ -1217,19 +1476,83 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState(agent.model);
+  const [attached, setAttached] = useState(null); // { name, text }
+  const fileRef = useRef(null);
   const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+
+  // Agents that benefit from document uploads.
+  const ALLOW_UPLOAD = ["legal", "blog", "anr"]; // Sol, Remy, Nora
+  const canUpload = ALLOW_UPLOAD.includes(agent.id);
+
+  async function onFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { alert("Please choose a file under 10MB."); return; }
+    setBusy(true);
+    try {
+      const isText = file.type.startsWith("text/") || /\.(txt|md)$/i.test(file.name);
+      if (isText) {
+        const text = await file.text();
+        setAttached({ name: file.name, text: text.slice(0, 20000) });
+      } else if (api.live()) {
+        // PDF / Word need backend extraction.
+        const b64 = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(String(r.result).split(",")[1]);
+          r.onerror = rej;
+          r.readAsDataURL(file);
+        });
+        const { text } = await api.extract(auth.token, file.name, file.type, b64);
+        setAttached({ name: file.name, text });
+      } else {
+        alert("PDF/Word reading works on the live site. In preview, upload a .txt or paste the text.");
+      }
+    } catch (err) {
+      alert(err.message || "Couldn't read that file.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
 
   // Persona + the artist profile (memory) so the agent personalizes its replies.
   const systemFor = (AGENT_SYSTEMS[agent.id] || "") + profileToContext(profile);
 
   async function send() {
     const q = input.trim();
-    if (!q || busy) return;
-    const next = [...msgs, { role: "user", text: q }];
+    if ((!q && !attached) || busy) return;
+    // Build the visible message and the text actually sent to the agent.
+    const displayText = attached ? `${q || "Take a look at this file:"}  📎 ${attached.name}` : q;
+    const sentText = attached
+      ? `${q || "Please review this document."}\n\n--- Attached file: ${attached.name} ---\n${attached.text}`
+      : q;
+    const next = [...msgs, { role: "user", text: displayText }];
     setMsgs(next); setInput(""); setBusy(true);
-    const payload = next.map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+    // Payload uses the full file text; the on-screen history shows the short version.
+    const payload = next.map((m, idx) =>
+      idx === next.length - 1
+        ? { role: "user", content: sentText }
+        : { role: m.role === "user" ? "user" : "assistant", content: m.text });
+    setAttached(null);
     try {
+      // The image agent (Iris) uses the real image API when live.
+      if (agent.id === "image") {
+        if (api.live()) {
+          const data = await api.generateImage(auth.token, q);
+          setMsgs(m => [...m, { role: "assistant",
+            text: `Here's "${q}"${data.usage ? ` · ${data.usage.remaining} images left this month` : ""}:`,
+            img: data.image }]);
+        } else {
+          // Preview fallback: SVG sketch (real raster needs the backend + OpenAI key).
+          const raw = await directCall(systemFor, payload);
+          const svg = (raw.match(/<svg[\s\S]*<\/svg>/i) || [])[0];
+          setMsgs(m => [...m, svg
+            ? { role: "assistant", text: `Preview sketch for "${q}" (deploy with an image key for real art):`, svg }
+            : { role: "assistant", text: "Couldn't render that one — try rephrasing." }]);
+        }
+        return;
+      }
       if (api.live()) {
         // Route through your backend (AI key stays server-side). Prepend profile
         // context so the server-side persona personalizes to this artist.
@@ -1238,23 +1561,34 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
                             { role: "assistant", content: "Got it — I'll keep your profile in mind." },
                             ...payload] : payload;
         const data = await api.chat(auth.token, agent.id, sent);
-        setMsgs(m => [...m, agent.id === "image"
-          ? (data.svg ? { role: "assistant", text: `Here's "${q}":`, svg: data.svg }
-                       : { role: "assistant", text: "Couldn't render that one — try rephrasing." })
-          : { role: "assistant", text: data.text || "…" }]);
+        setMsgs(m => [...m, { role: "assistant", text: data.text || "…" }]);
       } else {
         // Preview fallback: direct demo call.
         const raw = await directCall(systemFor, payload);
-        if (agent.id === "image") {
-          const svg = (raw.match(/<svg[\s\S]*<\/svg>/i) || [])[0];
-          setMsgs(m => [...m, svg ? { role: "assistant", text: `Here's "${q}":`, svg }
-                                  : { role: "assistant", text: "Couldn't render that one — try rephrasing." }]);
-        } else {
-          setMsgs(m => [...m, { role: "assistant", text: raw || "…" }]);
-        }
+        setMsgs(m => [...m, { role: "assistant", text: raw || "…" }]);
       }
     } catch (e) {
       setMsgs(m => [...m, { role: "assistant", text: `⚠️ ${e.message || "Connection issue — try again."}` }]);
+    } finally { setBusy(false); }
+  }
+
+  // Lets Mia (social) turn the current message into a promo graphic.
+  async function makeGraphic() {
+    const q = input.trim();
+    if (!q || busy) return;
+    const next = [...msgs, { role: "user", text: `Make a graphic: ${q}` }];
+    setMsgs(next); setInput(""); setBusy(true);
+    try {
+      if (api.live()) {
+        const data = await api.generateImage(auth.token, q);
+        setMsgs(m => [...m, { role: "assistant",
+          text: `Here's a graphic for "${q}"${data.usage ? ` · ${data.usage.remaining} images left this month` : ""}:`,
+          img: data.image }]);
+      } else {
+        setMsgs(m => [...m, { role: "assistant", text: "Graphic generation works on the live site (needs the image key). In preview, I can write the caption instead!" }]);
+      }
+    } catch (e) {
+      setMsgs(m => [...m, { role: "assistant", text: `⚠️ ${e.message || "Couldn't make that graphic."}` }]);
     } finally { setBusy(false); }
   }
 
@@ -1299,6 +1633,16 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
                 width: 280, height: 280, background: "#fff" }}
                 dangerouslySetInnerHTML={{ __html: m.svg.replace(/<svg/, '<svg width="280" height="280"') }} />
             )}
+            {m.img && (
+              <div style={{ marginTop: 8 }}>
+                <img src={m.img} alt="Generated artwork" style={{ width: 320, maxWidth: "100%",
+                  borderRadius: 14, border: `1px solid ${C.line}`, display: "block" }} />
+                <a href={m.img} download="anthem-artwork.png"
+                  style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px", marginTop: 8 }}>
+                  <Download size={15} /> Download image
+                </a>
+              </div>
+            )}
             {/* Copy + save + schedule actions on assistant text replies */}
             {m.role !== "user" && m.text && i !== 0 && (
               <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -1323,12 +1667,41 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
         <div ref={endRef} />
       </div>
 
+      {/* Attached file chip */}
+      {attached && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10,
+          background: C.cream, border: `1px solid ${C.line}`, borderRadius: 10, padding: "8px 12px", fontSize: 13 }}>
+          <FileText size={15} color={agent.color} />
+          <span style={{ flex: 1 }}>{attached.name}</span>
+          <button onClick={() => setAttached(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.soft }}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        {canUpload && (
+          <>
+            <input ref={fileRef} type="file" accept=".txt,.md,.pdf,.docx,text/plain,application/pdf"
+              onChange={onFile} style={{ display: "none" }} />
+            <button onClick={() => fileRef.current?.click()} disabled={busy}
+              title="Upload a document (txt, pdf, docx)"
+              style={{ ...btn("transparent"), opacity: busy ? .5 : 1 }}>
+              <Download size={17} style={{ transform: "rotate(180deg)" }} />
+            </button>
+          </>
+        )}
         <input value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && send()}
           placeholder={agent.id === "image" ? "Describe cover art or a promo graphic…" : `Message ${agent.name}…`}
           style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, color: C.ink,
             padding: "13px 16px", borderRadius: 12, fontSize: 14, outline: "none", fontFamily: FONT_BODY }} />
+        {agent.id === "social" && (
+          <button onClick={makeGraphic} disabled={busy} title="Generate a promo graphic"
+            style={{ ...btn("transparent"), opacity: busy ? .5 : 1 }}>
+            <ImageIcon size={17} />
+          </button>
+        )}
         <button onClick={send} disabled={busy} style={{ ...btn(agent.color), opacity: busy ? .5 : 1 }}>
           <Send size={17} />
         </button>
