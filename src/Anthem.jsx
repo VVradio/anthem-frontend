@@ -44,6 +44,11 @@ const api = {
     if (!r.ok) throw new Error((await r.json()).error || "Login failed");
     return r.json();
   },
+  async me(token) {
+    const r = await fetch(`${API_BASE}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not fetch account");
+    return r.json(); // { user }
+  },
   async chat(token, agentId, messages) {
     const r = await fetch(`${API_BASE}/api/chat`, {
       method: "POST",
@@ -603,6 +608,29 @@ function Dashboard({ auth, onExit }) {
   // Artist profile lives here so every agent can read it (the "memory").
   const [profile, setProfile] = useState(null);
   const [saved, setSaved] = useState([]); // saved tool outputs (lyrics, grants, etc.)
+  const [plan, setPlan] = useState(auth?.user?.plan || "indie");
+  const [justPaid, setJustPaid] = useState(false);
+
+  // Fetch the current plan fresh (reflects Stripe upgrades). If we just returned
+  // from a successful checkout (?paid=1), poll briefly so the webhook has time to land.
+  useEffect(() => {
+    if (!api.live() || !auth?.token) return;
+    const paid = typeof window !== "undefined" && /[?&]paid=1/.test(window.location.search);
+    if (paid) { setJustPaid(true); window.history.replaceState({}, "", "/"); }
+    let tries = 0;
+    const fetchPlan = () => {
+      api.me(auth.token).then(({ user }) => {
+        if (user?.plan) setPlan(user.plan);
+      }).catch(() => {});
+    };
+    fetchPlan();
+    // If returning from payment, re-check a few times while the webhook processes.
+    let timer;
+    if (paid) {
+      timer = setInterval(() => { tries++; fetchPlan(); if (tries >= 5) clearInterval(timer); }, 2500);
+    }
+    return () => timer && clearInterval(timer);
+  }, [auth]);
 
   const nav = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -615,6 +643,7 @@ function Dashboard({ auth, onExit }) {
     { id: "saved", label: "Saved", icon: Inbox, color: C.clay },
     { id: "referral", label: "Referrals", icon: Gift },
   ];
+  const planLabel = { indie: "Indie", artist: "Artist", label: "Label" }[plan] || "Indie";
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <aside className="scroll" style={{ width: 234, borderRight: `1px solid ${C.line}`, background: C.cream,
@@ -634,12 +663,38 @@ function Dashboard({ auth, onExit }) {
             </button>
           );
         })}
-        <button onClick={onExit} style={{ ...btn("transparent"), width: "100%", justifyContent: "center", marginTop: 20, fontSize: 13 }}>
+        {/* Current plan badge */}
+        <div style={{ marginTop: 16, padding: "12px 14px", background: C.paper, border: `1px solid ${C.line}`,
+          borderRadius: 12 }}>
+          <div style={{ fontSize: 11, color: C.soft, textTransform: "uppercase", letterSpacing: .5 }}>Your plan</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>{planLabel}</span>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.sage }} />
+          </div>
+          <button onClick={() => onExit()} style={{ ...btn("transparent"), width: "100%", justifyContent: "center",
+            marginTop: 8, fontSize: 12, padding: "7px 10px" }}>
+            {plan === "label" ? "Manage" : "Upgrade"}
+          </button>
+        </div>
+        <button onClick={onExit} style={{ ...btn("transparent"), width: "100%", justifyContent: "center", marginTop: 12, fontSize: 13 }}>
           ← Back to site
         </button>
       </aside>
 
       <main className="scroll" style={{ flex: 1, padding: "26px 32px", overflow: "auto" }}>
+        {justPaid && (
+          <div style={{ ...card, marginBottom: 18, borderColor: C.sage, background: "#f0f6ee",
+            display: "flex", alignItems: "center", gap: 12 }}>
+            <Check size={20} color={C.sage} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700 }}>Payment received — welcome to {planLabel}! 🎉</div>
+              <div style={{ color: C.soft, fontSize: 13 }}>Your plan is being activated. If it doesn't show within a minute, refresh.</div>
+            </div>
+            <button onClick={() => setJustPaid(false)} style={{ background: "none", border: "none", cursor: "pointer", color: C.soft }}>
+              <X size={18} />
+            </button>
+          </div>
+        )}
         {tab === "overview" && <Overview onJump={setTab} profile={profile} />}
         {tab === "streams" && <StreamsPanel profile={profile} auth={auth} />}
         {tab === "campaign" && <CampaignPanel auth={auth} profile={profile} onSetup={() => setTab("profile")} />}
