@@ -142,6 +142,32 @@ const api = {
     if (!r.ok) throw new Error((await r.json()).error || "Couldn't read file");
     return r.json(); // { text }
   },
+  async getHistory(token, agentId) {
+    const r = await fetch(`${API_BASE}/api/history/${agentId}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load history");
+    return r.json(); // { messages }
+  },
+  async listHistory(token) {
+    const r = await fetch(`${API_BASE}/api/history`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load history");
+    return r.json(); // { chats }
+  },
+  async saveHistory(token, agentId, messages) {
+    const r = await fetch(`${API_BASE}/api/history/${agentId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ messages }),
+    });
+    if (!r.ok) throw new Error("Could not save history");
+    return r.json();
+  },
+  async clearHistory(token, agentId) {
+    const r = await fetch(`${API_BASE}/api/history/${agentId}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error("Could not clear history");
+    return r.json();
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -641,6 +667,7 @@ function Dashboard({ auth, onExit }) {
     { id: "profile", label: "Artist Profile", icon: UserCircle },
     { id: "brain", label: "Brain", icon: Brain, color: C.plum },
     { id: "saved", label: "Saved", icon: Inbox, color: C.clay },
+    { id: "history", label: "History", icon: Clock, color: C.teal },
     { id: "referral", label: "Referrals", icon: Gift },
   ];
   const planLabel = { indie: "Indie", artist: "Artist", label: "Label" }[plan] || "Indie";
@@ -702,6 +729,7 @@ function Dashboard({ auth, onExit }) {
         {tab === "profile" && <ProfilePanel profile={profile} onSave={setProfile} />}
         {tab === "saved" && <SavedPanel auth={auth} saved={saved} setSaved={setSaved} />}
         {tab === "brain" && <BrainPanel auth={auth} />}
+        {tab === "history" && <HistoryPanel auth={auth} onOpenAgent={setTab} />}
         {tab === "referral" && <ReferralPanel />}
         {AGENTS.map(a => tab === a.id && <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} setSaved={setSaved} />)}
       </main>
@@ -1451,6 +1479,87 @@ function BrainPanel({ auth }) {
   );
 }
 
+/* ---- Conversation history viewer (browse + search) ---- */
+function HistoryPanel({ auth, onOpenAgent }) {
+  const [chats, setChats] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(null); // agentId expanded
+
+  useEffect(() => {
+    if (api.live() && auth?.token) {
+      setLoading(true);
+      api.listHistory(auth.token).then(d => setChats(d.chats || [])).catch(() => {}).finally(() => setLoading(false));
+    }
+  }, [auth]);
+
+  const agentName = id => (AGENTS.find(a => a.id === id)?.name || id);
+  const agentColor = id => (AGENTS.find(a => a.id === id)?.color || C.rust);
+
+  // Filter by search text across all messages.
+  const filtered = !q.trim() ? chats : chats.filter(c =>
+    c.messages.some(m => (m.text || "").toLowerCase().includes(q.toLowerCase())));
+
+  return (
+    <div className="rise">
+      <PageTitle title="History" sub="Browse and search every conversation with your agents." />
+
+      {!api.live() ? (
+        <div style={{ ...card, color: C.soft }}>Conversation history is available on the live site once you're logged in.</div>
+      ) : (
+        <>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search your conversations…"
+            style={{ ...inp, marginBottom: 16 }} />
+          {loading && <div style={{ color: C.soft, fontSize: 13 }}>Loading…</div>}
+          {!loading && filtered.length === 0 && (
+            <div style={{ ...card, textAlign: "center", padding: 40 }}>
+              <Clock size={32} color={C.soft} style={{ margin: "0 auto 12px" }} />
+              <div style={{ fontWeight: 600 }}>{q ? "No matches" : "No conversations yet"}</div>
+              <p style={{ color: C.soft, fontSize: 14, marginTop: 6 }}>
+                {q ? "Try a different search." : "Chat with any agent and it'll show up here automatically."}
+              </p>
+            </div>
+          )}
+          <div style={{ display: "grid", gap: 12 }}>
+            {filtered.map(c => (
+              <div key={c.agentId} style={card}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15, color: agentColor(c.agentId) }}>{agentName(c.agentId)}</span>
+                  <span style={{ color: C.soft, fontSize: 12 }}>{c.count} messages</span>
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                    <button onClick={() => setOpen(open === c.agentId ? null : c.agentId)}
+                      style={{ ...btn("transparent"), fontSize: 13, padding: "7px 12px" }}>
+                      {open === c.agentId ? "Hide" : "Preview"}
+                    </button>
+                    <button onClick={() => onOpenAgent(c.agentId)}
+                      style={{ ...btn(agentColor(c.agentId)), fontSize: 13, padding: "7px 12px" }}>
+                      Open chat
+                    </button>
+                  </div>
+                </div>
+                {open === c.agentId && (
+                  <div style={{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 12,
+                    display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflow: "auto" }}>
+                    {c.messages.map((m, i) => (
+                      <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%",
+                        background: m.role === "user" ? agentColor(c.agentId) : C.cream,
+                        color: m.role === "user" ? "#fff" : C.ink, padding: "8px 12px", borderRadius: 11,
+                        fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap",
+                        border: m.role === "user" ? "none" : `1px solid ${C.line}` }}>
+                        {m.img ? <img src={m.img} alt="" style={{ width: 180, borderRadius: 8, display: "block" }} /> : m.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ---- Saved items library ---- */
 function SavedPanel({ auth, saved, setSaved }) {
   const [loading, setLoading] = useState(false);
@@ -1488,27 +1597,44 @@ function SavedPanel({ auth, saved, setSaved }) {
         </div>
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
-          {saved.map(item => (
+          {saved.map(item => {
+            const isImage = typeof item.text === "string" && item.text.startsWith("data:image");
+            return (
             <div key={item.id} style={card}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                 <span style={{ fontWeight: 700, fontSize: 14 }}>{item.tool}</span>
                 <span style={{ color: C.soft, fontSize: 12 }}>{item.when}</span>
                 <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                  <CopyButton text={item.text} />
-                  <button onClick={() => downloadText(`${(item.tool || "anthem").replace(/\s+/g, "-")}.txt`, item.text)}
-                    style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
-                    <Download size={15} /> Download
-                  </button>
+                  {isImage ? (
+                    <a href={item.text} download={`${(item.tool || "anthem").replace(/\s+/g, "-")}.png`}
+                      style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
+                      <Download size={15} /> Download
+                    </a>
+                  ) : (
+                    <>
+                      <CopyButton text={item.text} />
+                      <button onClick={() => downloadText(`${(item.tool || "anthem").replace(/\s+/g, "-")}.txt`, item.text)}
+                        style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
+                        <Download size={15} /> Download
+                      </button>
+                    </>
+                  )}
                   <button onClick={() => remove(item.id)}
                     style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px", color: C.rust }}>
                     Delete
                   </button>
                 </div>
               </div>
-              <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.55, color: C.ink,
-                maxHeight: 160, overflow: "auto" }}>{item.text}</div>
+              {isImage ? (
+                <img src={item.text} alt={item.tool} style={{ width: 300, maxWidth: "100%",
+                  borderRadius: 12, border: `1px solid ${C.line}`, display: "block" }} />
+              ) : (
+                <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.55, color: C.ink,
+                  maxHeight: 160, overflow: "auto" }}>{item.text}</div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1532,9 +1658,45 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState(agent.model);
   const [attached, setAttached] = useState(null); // { name, text }
+  const [loaded, setLoaded] = useState(false); // history loaded yet?
+  const [savedTick, setSavedTick] = useState(false); // shows "Saved" briefly
   const fileRef = useRef(null);
   const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+
+  // Load saved conversation when opening this agent (live mode only).
+  useEffect(() => {
+    let cancelled = false;
+    if (api.live() && auth?.token) {
+      api.getHistory(auth.token, agent.id)
+        .then(({ messages }) => {
+          if (!cancelled && Array.isArray(messages) && messages.length) setMsgs(messages);
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoaded(true); });
+    } else {
+      setLoaded(true);
+    }
+    return () => { cancelled = true; };
+  }, [agent.id, auth]);
+
+  // Auto-save the conversation whenever it changes (after the initial load).
+  useEffect(() => {
+    if (!loaded || !api.live() || !auth?.token) return;
+    // Don't bother saving a brand-new empty chat (just the greeting).
+    if (msgs.length <= 1) return;
+    const t = setTimeout(() => {
+      api.saveHistory(auth.token, agent.id, msgs)
+        .then(() => { setSavedTick(true); setTimeout(() => setSavedTick(false), 1500); })
+        .catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [msgs, loaded]);
+
+  function clearChat() {
+    setMsgs([{ role: "assistant", text: agent.sample }]);
+    if (api.live() && auth?.token) api.clearHistory(auth.token, agent.id).catch(() => {});
+  }
 
   // Agents that benefit from document uploads.
   const ALLOW_UPLOAD = ["legal", "blog", "anr"]; // Sol, Remy, Nora
@@ -1668,6 +1830,17 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
             {MODELS.map(m => <option key={m.id} value={m.id}>{m.label} · {m.vendor}</option>)}
           </select>
         </label>
+        {api.live() && (savedTick
+          ? <span style={{ display: "flex", alignItems: "center", gap: 5, color: C.sage, fontSize: 12, fontWeight: 600 }}>
+              <Check size={14} /> Saved
+            </span>
+          : <span style={{ display: "flex", alignItems: "center", gap: 5, color: C.soft, fontSize: 12 }}>
+              <Clock size={13} /> Auto-saved
+            </span>)}
+        <button onClick={clearChat} title="Clear this conversation"
+          style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
+          <X size={15} /> Clear
+        </button>
       </div>
 
       <div className="scroll" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 6 }}>
@@ -1692,10 +1865,20 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
               <div style={{ marginTop: 8 }}>
                 <img src={m.img} alt="Generated artwork" style={{ width: 320, maxWidth: "100%",
                   borderRadius: 14, border: `1px solid ${C.line}`, display: "block" }} />
-                <a href={m.img} download="anthem-artwork.png"
-                  style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px", marginTop: 8 }}>
-                  <Download size={15} /> Download image
-                </a>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <a href={m.img} download="anthem-artwork.png"
+                    style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
+                    <Download size={15} /> Download
+                  </a>
+                  <button onClick={() => {
+                      const item = { id: Date.now(), tool: `${agent.name} image`, text: m.img, when: new Date().toLocaleString() };
+                      setSaved?.(list => [item, ...(list || [])]);
+                      if (api.live() && auth?.token) api.addSaved(auth.token, `${agent.name} image`, m.img).catch(() => {});
+                    }}
+                    style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
+                    <Inbox size={15} /> Save
+                  </button>
+                </div>
               </div>
             )}
             {/* Copy + save + schedule actions on assistant text replies */}
