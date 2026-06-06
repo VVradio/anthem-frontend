@@ -212,6 +212,24 @@ const api = {
     if (!r.ok) throw new Error("Could not remove member");
     return r.json();
   },
+  async buySeats(token, quantity) {
+    const r = await fetch(`${API_BASE}/api/billing/seats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ quantity }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not start seat checkout");
+    return r.json(); // { url }
+  },
+  async requestFeature(token, text) {
+    const r = await fetch(`${API_BASE}/api/features`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ text }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not submit");
+    return r.json();
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -782,6 +800,7 @@ function Dashboard({ auth, onExit, onLogout }) {
     { id: "history", label: "History", icon: Clock, color: C.teal },
     { id: "team", label: "Team", icon: Users2, color: C.plum },
     { id: "referral", label: "Referrals", icon: Gift },
+    { id: "features", label: "Request Features", icon: Sparkles, color: C.gold },
   ];
   const planLabel = { trial: "Free Trial", indie: "Indie", artist: "Artist", label: "Label" }[plan] || "Indie";
   const daysLeft = plan === "trial" ? trialDaysLeft(auth?.user) : null;
@@ -857,6 +876,7 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "brain" && <BrainPanel auth={auth} />}
         {tab === "history" && <HistoryPanel auth={auth} onOpenAgent={setTab} />}
         {tab === "team" && <TeamPanel auth={auth} onUpgrade={() => onExit()} />}
+        {tab === "features" && <FeaturesPanel auth={auth} />}
         {tab === "referral" && <ReferralPanel />}
         {AGENTS.map(a => tab === a.id && (
           planAllows(plan, a.id, auth?.user)
@@ -921,9 +941,69 @@ function MiniLineChart({ values, labels, color }) {
 function StreamsPanel({ profile, auth }) {
   const [connected, setConnected] = useState({ Spotify: true, "Apple Music": false, "YouTube Music": false, Other: false });
   const [data, setData] = useState({ months: STREAM_MONTHS, streams: STREAM_VALUES, topTracks: TOP_TRACKS, platforms: PLATFORMS, sample: true });
+  const [editing, setEditing] = useState(false);
+  const [manual, setManual] = useState(null); // { months, streams, listeners, topTracks }
+  const [draft, setDraft] = useState(null);
 
-  // In live mode, pull real (or backend-sample) stats from the API.
+  // Load any saved manual stats (stored as a special Brain item).
   useEffect(() => {
+    if (api.live() && auth?.token) {
+      api.listBrain(auth.token).then(d => {
+        const row = (d.items || []).find(i => i.label === "__stats__");
+        if (row) {
+          try { const m = JSON.parse(row.content); setManual(m); } catch {}
+        }
+      }).catch(() => {});
+    } else {
+      try { const s = JSON.parse(localStorage.getItem("anthem_stats") || "null"); if (s) setManual(s); } catch {}
+    }
+  }, [auth]);
+
+  // When manual stats exist, use them instead of the sample data.
+  useEffect(() => {
+    if (manual) {
+      setData({
+        months: manual.months, streams: manual.streams,
+        topTracks: (manual.topTracks || []).map(t => ({ ...t, pct: 100 })),
+        platforms: PLATFORMS, sample: false, listeners: manual.listeners,
+      });
+    }
+  }, [manual]);
+
+  function startEdit() {
+    setDraft(manual || {
+      months: STREAM_MONTHS,
+      streams: [0, 0, 0, 0, 0, 0],
+      listeners: "",
+      topTracks: [{ title: "", streams: 0 }, { title: "", streams: 0 }, { title: "", streams: 0 }],
+    });
+    setEditing(true);
+  }
+
+  async function saveManual() {
+    const clean = {
+      months: draft.months,
+      streams: draft.streams.map(n => Number(n) || 0),
+      listeners: draft.listeners,
+      topTracks: draft.topTracks.filter(t => t.title.trim()).map(t => ({ title: t.title, streams: Number(t.streams) || 0 })),
+    };
+    setManual(clean); setEditing(false);
+    if (api.live() && auth?.token) {
+      // Replace any existing __stats__ brain row.
+      try {
+        const d = await api.listBrain(auth.token);
+        const old = (d.items || []).find(i => i.label === "__stats__");
+        if (old) await api.deleteBrain(auth.token, old.id);
+        await api.addBrain(auth.token, "note", "__stats__", JSON.stringify(clean));
+      } catch {}
+    } else {
+      try { localStorage.setItem("anthem_stats", JSON.stringify(clean)); } catch {}
+    }
+  }
+
+  // In live mode, pull real (or backend-sample) stats from the API — only if no manual stats.
+  useEffect(() => {
+    if (manual) return;
     if (api.live() && auth?.token) {
       api.streams(auth.token).then(d => {
         setData({
@@ -935,7 +1015,7 @@ function StreamsPanel({ profile, auth }) {
         });
       }).catch(() => {});
     }
-  }, [auth]);
+  }, [auth, manual]);
 
   const SV = data.streams;
   const total = SV.reduce((a, b) => a + b, 0);
@@ -947,7 +1027,7 @@ function StreamsPanel({ profile, auth }) {
     { l: "Streams (6 mo)", v: total.toLocaleString(), c: C.teal },
     { l: "This month", v: lastMo.toLocaleString(), c: C.rust },
     { l: "Mo/mo growth", v: `+${growth}%`, c: C.sage },
-    { l: "Monthly listeners", v: "42.8k", c: C.plum },
+    { l: "Monthly listeners", v: data.listeners ? Number(String(data.listeners).replace(/[^0-9.]/g,"")).toLocaleString() : (manual ? "—" : "42.8k"), c: C.plum },
   ];
   return (
     <div className="rise">
@@ -955,46 +1035,69 @@ function StreamsPanel({ profile, auth }) {
         sub="Your streaming performance across platforms." />
 
       <div style={{ ...card, marginBottom: 18, display: "flex", gap: 10, alignItems: "center",
-        background: "#fdf0e4", borderColor: C.clay, fontSize: 13 }}>
-        <BarChart3 size={18} color={C.rust} />
-        <span style={{ flex: 1 }}>Showing <strong>sample data</strong>. Connect your accounts to see real numbers — Nora and June will use them automatically.</span>
+        background: data.sample ? "#fdf0e4" : "#f0f6ee", borderColor: data.sample ? C.clay : C.sage, fontSize: 13 }}>
+        <BarChart3 size={18} color={data.sample ? C.rust : C.sage} />
+        <span style={{ flex: 1 }}>
+          {data.sample
+            ? <>Showing <strong>sample data</strong>. Enter your real numbers below — Nora and June will use them automatically.</>
+            : <>Showing <strong>your numbers</strong>. Nora and June use these to personalize advice.</>}
+        </span>
+        <button onClick={startEdit} style={{ ...btn(C.teal), fontSize: 13, padding: "8px 14px" }}>
+          {manual ? "Edit my stats" : "Enter my stats"}
+        </button>
       </div>
 
-      {/* Connect buttons */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-        {CONNECT_PLATFORMS.map(p => (
-          <button key={p.name} onClick={() => setConnected(c => ({ ...c, [p.name]: !c[p.name] }))}
-            style={{ ...btn(connected[p.name] ? p.color : "transparent"), fontSize: 14 }}>
-            {connected[p.name] ? <Check size={16} /> : <Link2 size={16} />}
-            {connected[p.name]
-              ? (p.name === "Other" ? "Other connected" : `${p.name} connected`)
-              : (p.name === "Other" ? "Connect other (Tidal, Deezer…)" : `Connect ${p.name}`)}
-          </button>
-        ))}
+      {/* Auto-connect coming soon note */}
+      <div style={{ ...card, marginBottom: 18, padding: "12px 16px", display: "flex", gap: 10,
+        alignItems: "center", fontSize: 13, color: C.soft }}>
+        <Clock size={16} color={C.plum} />
+        <span style={{ flex: 1 }}>Auto-connect to Spotify & Apple Music is coming soon. For now, pop your numbers in manually from your Spotify for Artists dashboard.</span>
       </div>
 
-      {/* Connected-platforms status widget */}
-      <div style={{ ...card, marginBottom: 18, padding: "14px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>
-            Connected platforms
-            <span style={{ color: C.soft, fontWeight: 400, marginLeft: 8 }}>
-              {CONNECT_PLATFORMS.filter(p => connected[p.name]).length} of {CONNECT_PLATFORMS.length}
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            {CONNECT_PLATFORMS.map(p => (
-              <span key={p.name} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13,
-                color: connected[p.name] ? C.ink : C.soft }}>
-                <span style={{ width: 9, height: 9, borderRadius: 9, flexShrink: 0,
-                  background: connected[p.name] ? p.color : "transparent",
-                  border: connected[p.name] ? "none" : `1.5px solid ${C.line}` }} />
-                {p.name}
-              </span>
-            ))}
+      {/* Manual entry form */}
+      {editing && draft && (
+        <div style={{ ...card, marginBottom: 18 }}>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Enter your streaming numbers</div>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Monthly streams (last 6 months)</label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(90px,1fr))", gap: 8 }}>
+                {draft.months.map((m, i) => (
+                  <div key={m}>
+                    <div style={{ fontSize: 11, color: C.soft, marginBottom: 3 }}>{m}</div>
+                    <input type="number" value={draft.streams[i] || ""} placeholder="0"
+                      onChange={e => { const s = [...draft.streams]; s[i] = e.target.value; setDraft({ ...draft, streams: s }); }}
+                      style={{ ...inp, padding: "8px 10px", fontSize: 13 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Monthly listeners</label>
+              <input value={draft.listeners} placeholder="e.g. 12,500"
+                onChange={e => setDraft({ ...draft, listeners: e.target.value })}
+                style={{ ...inp, maxWidth: 200 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Top tracks</label>
+              {draft.topTracks.map((t, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <input value={t.title} placeholder={`Track ${i + 1} name`}
+                    onChange={e => { const tt = [...draft.topTracks]; tt[i] = { ...tt[i], title: e.target.value }; setDraft({ ...draft, topTracks: tt }); }}
+                    style={{ ...inp, flex: 2, padding: "8px 10px", fontSize: 13 }} />
+                  <input type="number" value={t.streams || ""} placeholder="streams"
+                    onChange={e => { const tt = [...draft.topTracks]; tt[i] = { ...tt[i], streams: e.target.value }; setDraft({ ...draft, topTracks: tt }); }}
+                    style={{ ...inp, flex: 1, padding: "8px 10px", fontSize: 13 }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={saveManual} style={{ ...btn(C.rust) }}>Save my stats</button>
+              <button onClick={() => setEditing(false)} style={{ ...btn("transparent") }}>Cancel</button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 18 }}>
         {kpis.map(k => (
@@ -2250,6 +2353,73 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   );
 }
 
+/* ---- Coming soon + request a feature ---- */
+const COMING_SOON = [
+  { title: "One-click social posting", desc: "Connect your Instagram, TikTok & more so agents post for you automatically.", icon: Send, color: C.plum, tag: "In progress" },
+  { title: "Connect streaming stats", desc: "Link Spotify & Apple Music to see real numbers (not samples) across your dashboard.", icon: BarChart3, color: C.teal, tag: "Planned" },
+  { title: "Scheduled posts", desc: "Queue content and have it go out at the best times automatically.", icon: Clock, color: C.rust, tag: "Planned" },
+  { title: "Voice chat with agents", desc: "Talk to your team out loud instead of typing.", icon: Mic2, color: C.gold, tag: "Exploring" },
+  { title: "Mobile app", desc: "Anthem in your pocket — iOS & Android.", icon: Music2, color: C.clay, tag: "Exploring" },
+];
+
+function FeaturesPanel({ auth }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function submit() {
+    const t = text.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    try {
+      if (api.live() && auth?.token) await api.requestFeature(auth.token, t);
+      setDone(true); setText("");
+      setTimeout(() => setDone(false), 2500);
+    } catch (e) { alert(e.message || "Couldn't submit."); }
+    finally { setBusy(false); }
+  }
+
+  const tagColor = { "In progress": C.plum, "Planned": C.teal, "Exploring": C.soft };
+
+  return (
+    <div className="rise">
+      <PageTitle title="Request Features" sub="See what's coming, and tell us what you want next." />
+
+      {/* Request box */}
+      <div style={{ ...card, marginBottom: 22 }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Got an idea?</div>
+        <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>
+          Tell us what would make Anthem more useful for you. We read every request.
+        </p>
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={3}
+          placeholder="I'd love it if Anthem could…" style={{ ...inp, resize: "vertical" }} />
+        <button onClick={submit} disabled={busy}
+          style={{ ...btn(done ? C.sage : C.gold), marginTop: 12, opacity: busy ? .6 : 1 }}>
+          {done ? <><Check size={16} /> Thanks — we got it!</> : busy ? "Sending…" : <><Sparkles size={16} /> Send request</>}
+        </button>
+      </div>
+
+      {/* Coming soon */}
+      <SectionHead kicker="Roadmap" title="Coming soon" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14 }}>
+        {COMING_SOON.map(f => (
+          <div key={f.title} style={{ ...card, position: "relative" }}>
+            <span style={{ position: "absolute", top: 14, right: 14, fontSize: 11, fontWeight: 700,
+              color: tagColor[f.tag] || C.soft, background: `${tagColor[f.tag] || C.soft}18`,
+              padding: "3px 10px", borderRadius: 20 }}>{f.tag}</span>
+            <div style={{ width: 42, height: 42, borderRadius: 11, background: `${f.color}18`,
+              border: `1px solid ${f.color}40`, display: "grid", placeItems: "center" }}>
+              <f.icon size={20} color={f.color} />
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 12 }}>{f.title}</div>
+            <p style={{ color: C.soft, fontSize: 13, lineHeight: 1.5, marginTop: 6 }}>{f.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ---- Team: invite members ($10/seat), shared workspace ---- */
 function TeamPanel({ auth, onUpgrade }) {
   const [data, setData] = useState(null);
@@ -2325,6 +2495,23 @@ function TeamPanel({ auth, onUpgrade }) {
             </button>
           </div>
           {msg && <div style={{ color: C.soft, fontSize: 13, marginTop: 8 }}>{msg}</div>}
+          <div style={{ borderTop: `1px solid ${C.line}`, marginTop: 14, paddingTop: 14,
+            display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>Pay for seats</div>
+              <div style={{ color: C.soft, fontSize: 13 }}>Each teammate seat is ${seatPrice}/month.</div>
+            </div>
+            <button onClick={async () => {
+                try {
+                  const qty = Math.max(1, (data?.members?.length || 1) - 1 + (data?.invites?.length || 0)) || 1;
+                  const { url } = await api.buySeats(auth.token, qty);
+                  window.location.href = url;
+                } catch (e) { alert(e.message || "Couldn't start checkout."); }
+              }}
+              style={btn(C.teal)}>
+              <Wallet size={16} /> Buy seats
+            </button>
+          </div>
         </div>
       ) : (
         <div style={{ ...card, marginBottom: 18, color: C.soft, fontSize: 14 }}>
@@ -2501,36 +2688,46 @@ function saveImage(dataUrl, filename = "anthem-image.png") {
 }
 
 // A "Post" button that opens a small platform picker, then posts via the backend.
+// Platform open targets. X supports prefilled text; others open the composer/app
+// and the caption is on the clipboard ready to paste (their APIs don't allow prefill).
+const PLATFORM_OPEN = {
+  twitter:   (t) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(t || "")}`,
+  facebook:  () => `https://www.facebook.com/`,
+  instagram: () => `https://www.instagram.com/`,
+  tiktok:    () => `https://www.tiktok.com/upload`,
+  threads:   () => `https://www.threads.net/`,
+  linkedin:  () => `https://www.linkedin.com/feed/`,
+  youtube:   () => `https://www.youtube.com/upload`,
+};
+
 function PostMenu({ token, text, image }) {
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  async function post(pf) {
-    setBusy(true); setOpen(false);
-    try {
-      let imageUrl;
-      if (image) {
-        // Host the image first so the platform can fetch it from a public URL.
-        const { url } = await api.hostImage(token, image);
-        imageUrl = url;
-      }
-      await api.socialPost(token, text || "", [pf.id], imageUrl);
-      alert(`Posted to ${pf.label}! 🎉`);
-    } catch (e) {
-      alert(e.message || "Couldn't post.");
-    } finally { setBusy(false); }
+
+  function go(pf) {
+    setOpen(false);
+    // Put the caption on the clipboard so the user can paste it.
+    if (text) { try { navigator.clipboard?.writeText(text); } catch {} }
+    const url = (PLATFORM_OPEN[pf.id] || (() => "#"))(text);
+    // X can prefill; others just open — tell the user the caption is copied.
+    if (pf.id !== "twitter" && text) {
+      alert(`Caption copied! Opening ${pf.label} — just paste it into your post.`);
+    }
+    window.open(url, "_blank", "noopener");
   }
+
   return (
     <span style={{ position: "relative", display: "inline-block" }}>
-      <button onClick={() => setOpen(o => !o)} disabled={busy}
-        style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px", opacity: busy ? .5 : 1 }}>
-        <Send size={15} /> {busy ? "Posting…" : "Post"}
+      <button onClick={() => setOpen(o => !o)}
+        style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
+        <Send size={15} /> Post
       </button>
       {open && (
         <div style={{ position: "absolute", bottom: "110%", left: 0, zIndex: 20, background: C.card,
           border: `1px solid ${C.line}`, borderRadius: 10, boxShadow: "0 12px 30px -12px rgba(31,26,22,.4)",
-          padding: 6, minWidth: 150 }}>
+          padding: 6, minWidth: 170 }}>
+          <div style={{ fontSize: 11, color: C.soft, padding: "4px 12px 6px" }}>Copy caption & open:</div>
           {SOCIAL_PLATFORMS.map(pf => (
-            <button key={pf.id} onClick={() => post(pf)}
+            <button key={pf.id} onClick={() => go(pf)}
               style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none",
                 padding: "8px 12px", borderRadius: 7, cursor: "pointer", fontSize: 13, color: C.ink, fontFamily: FONT_BODY }}>
               {pf.label}
