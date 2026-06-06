@@ -2374,6 +2374,7 @@ const COMING_SOON = [
   { title: "Video editing", desc: "Turn your tracks into ready-to-post video clips and visualizers — right inside Anthem.", icon: Music2, color: C.rust, tag: "Planned" },
   { title: "Beat making", desc: "Generate and customize beats and instrumentals to spark your next track.", icon: Music, color: C.plum, tag: "Planned" },
   { title: "Scheduled posts", desc: "Queue content and have it go out at the best times automatically.", icon: Clock, color: C.rust, tag: "Planned" },
+  { title: "Call agent", desc: "An AI voice agent that answers calls, books gigs, and handles fan & venue inquiries by phone.", icon: MessageCircle, color: C.teal, tag: "Planned" },
   { title: "Voice chat with agents", desc: "Talk to your team out loud instead of typing.", icon: Mic2, color: C.gold, tag: "Exploring" },
   { title: "Mobile app", desc: "Anthem in your pocket — iOS & Android.", icon: Music2, color: C.clay, tag: "Exploring" },
 ];
