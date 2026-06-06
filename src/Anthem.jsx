@@ -230,6 +230,11 @@ const api = {
     if (!r.ok) throw new Error((await r.json()).error || "Could not submit");
     return r.json();
   },
+  async getReferrals(token) {
+    const r = await fetch(`${API_BASE}/api/referral`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load referrals");
+    return r.json();
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -351,6 +356,11 @@ export default function App() {
         }
       }
     } catch { /* ignore */ }
+    // Capture a referral code if they arrived via someone's link (?ref=CODE).
+    try {
+      const m = /[?&]ref=([^&]+)/.exec(window.location.search);
+      if (m && m[1]) localStorage.setItem("anthem_ref", decodeURIComponent(m[1]));
+    } catch {}
   }, []);
 
   function launch() {
@@ -696,10 +706,13 @@ function Landing({ onLaunch, onCheckout }) {
 
 /* ============================ LOGIN ============================ */
 function Login({ onAuthed, onBack }) {
-  const [mode, setMode] = useState("login"); // login | signup
+  const hasRef = (() => { try { return !!localStorage.getItem("anthem_ref"); } catch { return false; } })();
+  const [mode, setMode] = useState(hasRef ? "signup" : "login"); // login | signup
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [ref, setRef] = useState("");
+  const [ref, setRef] = useState(() => {
+    try { return localStorage.getItem("anthem_ref") || ""; } catch { return ""; }
+  });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [remember, setRemember] = useState(true); // stay logged in by default
@@ -710,6 +723,7 @@ function Login({ onAuthed, onBack }) {
       const res = mode === "signup"
         ? await api.signup(email, password, ref || undefined)
         : await api.login(email, password);
+      try { localStorage.removeItem("anthem_ref"); } catch {}
       onAuthed(res, remember);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
@@ -877,7 +891,7 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "history" && <HistoryPanel auth={auth} onOpenAgent={setTab} />}
         {tab === "team" && <TeamPanel auth={auth} onUpgrade={() => onExit()} />}
         {tab === "features" && <FeaturesPanel auth={auth} />}
-        {tab === "referral" && <ReferralPanel />}
+        {tab === "referral" && <ReferralPanel auth={auth} />}
         {AGENTS.map(a => tab === a.id && (
           planAllows(plan, a.id, auth?.user)
             ? <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} setSaved={setSaved} />
@@ -2357,6 +2371,8 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
 const COMING_SOON = [
   { title: "One-click social posting", desc: "Connect your Instagram, TikTok & more so agents post for you automatically.", icon: Send, color: C.plum, tag: "In progress" },
   { title: "Connect streaming stats", desc: "Link Spotify & Apple Music to see real numbers (not samples) across your dashboard.", icon: BarChart3, color: C.teal, tag: "Planned" },
+  { title: "Video editing", desc: "Turn your tracks into ready-to-post video clips and visualizers — right inside Anthem.", icon: Music2, color: C.rust, tag: "Planned" },
+  { title: "Beat making", desc: "Generate and customize beats and instrumentals to spark your next track.", icon: Music, color: C.plum, tag: "Planned" },
   { title: "Scheduled posts", desc: "Queue content and have it go out at the best times automatically.", icon: Clock, color: C.rust, tag: "Planned" },
   { title: "Voice chat with agents", desc: "Talk to your team out loud instead of typing.", icon: Mic2, color: C.gold, tag: "Exploring" },
   { title: "Mobile app", desc: "Anthem in your pocket — iOS & Android.", icon: Music2, color: C.clay, tag: "Exploring" },
@@ -2565,19 +2581,37 @@ function TeamPanel({ auth, onUpgrade }) {
   );
 }
 
-function ReferralPanel() {
+function ReferralPanel({ auth }) {
   const [copied, setCopied] = useState(false);
-  const link = "https://anthem.fm/r/your-artist-9F2K";
-  const rows = [
-    ["The Hold Tights", "Artist", "Active", "$23.70/mo"],
-    ["Velour Records", "Label", "Active", "$74.70/mo"],
-    ["mae.wav", "Indie", "Trial", "—"],
-  ];
+  const [info, setInfo] = useState(null); // real data from backend
+  // Real, unique link built from the logged-in artist's referral code.
+  const code = info?.code || auth?.user?.referralCode || "";
+  const base = (typeof window !== "undefined" && window.location.origin) || "https://www.varietyvibesradio.shop";
+  const link = code ? `${base}/?ref=${code}` : `${base}`;
+
+  useEffect(() => {
+    if (api.live() && auth?.token) {
+      api.getReferrals(auth.token).then(setInfo).catch(() => {});
+    }
+  }, [auth]);
+
+  // Real referrals (fall back to empty if none yet).
+  const referrals = info?.referrals || [];
+  const activeCount = info?.activeCount ?? referrals.filter(r => r.status === "active").length;
+  const pendingCount = referrals.filter(r => r.status === "trial" || r.status === "pending").length;
+  const totalEarned = info ? `$${(info.owedUsd ?? 0).toFixed(2)}` : "$0.00";
+  const rows = referrals.map(r => [
+    r.referredEmail || r.referred_email || "—",
+    (r.plan || "—").charAt(0).toUpperCase() + (r.plan || "").slice(1),
+    r.status === "active" ? "Active" : (r.status === "trial" ? "Trial" : (r.status || "—")),
+    r.status === "active" && r.commissionCents ? `$${(r.commissionCents / 100).toFixed(2)}/mo` : "—",
+  ]);
   return (
     <div className="rise">
       <PageTitle title="Referrals" sub="Put other artists on — earn 30% recurring." />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 22 }}>
-        {[["Total earned", "$1,284", C.rust], ["Active referrals", "8", C.teal], ["Pending", "2", C.gold], ["Rewards pts", "1,600", C.plum]]
+        {[["Total earned", totalEarned, C.rust], ["Active referrals", String(activeCount), C.teal],
+          ["Pending", String(pendingCount), C.gold], ["Total referred", String(referrals.length), C.plum]]
           .map(([l, v, c]) => (
             <div key={l} style={card}>
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: c, fontWeight: 600 }}>{v}</div>
@@ -2635,18 +2669,26 @@ function ReferralPanel() {
       </div>
       <div style={card}>
         <div style={{ fontWeight: 700, marginBottom: 12 }}>Your referrals</div>
+        {rows.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 30, color: C.soft }}>
+            <Gift size={28} color={C.soft} style={{ margin: "0 auto 10px" }} />
+            <div style={{ fontWeight: 600, color: C.ink }}>No referrals yet</div>
+            <p style={{ fontSize: 14, marginTop: 6 }}>Share your link above. When artists join with it, they'll show up here.</p>
+          </div>
+        ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead><tr style={{ color: C.soft, textAlign: "left" }}>
               {["Artist / Label", "Plan", "Status", "Your commission"].map(h => <th key={h} style={{ padding: "8px 10px", fontWeight: 600 }}>{h}</th>)}
             </tr></thead>
-            <tbody>{rows.map(r => (
-              <tr key={r[0]} style={{ borderTop: `1px solid ${C.line}` }}>
+            <tbody>{rows.map((r, ri) => (
+              <tr key={ri} style={{ borderTop: `1px solid ${C.line}` }}>
                 {r.map((c, i) => <td key={i} style={{ padding: "12px 10px", color: i === 2 && c === "Active" ? C.sage : C.ink }}>{c}</td>)}
               </tr>
             ))}</tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );
