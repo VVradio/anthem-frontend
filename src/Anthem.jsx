@@ -321,10 +321,30 @@ export default function App() {
   const [auth, setAuth] = useState(null); // { token, user }
   const [pendingPlan, setPendingPlan] = useState(null); // { plan, cycle } chosen before login
 
+  // Restore a remembered session on load (if the user chose "Remember me").
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("anthem_auth");
+      if (saved) {
+        const a = JSON.parse(saved);
+        if (a?.token) {
+          setAuth(a);
+          setView("dashboard");
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   function launch() {
     // If a backend is configured, require login first; otherwise go straight in (demo).
     if (api.live() && !auth) setView("login");
     else setView("dashboard");
+  }
+
+  function logout() {
+    setAuth(null);
+    try { localStorage.removeItem("anthem_auth"); } catch {}
+    setView("landing");
   }
 
   // Begin Stripe checkout. If not logged in (and backend live), log in first then resume.
@@ -339,8 +359,13 @@ export default function App() {
     }
   }
 
-  async function afterLogin(a) {
+  async function afterLogin(a, remember) {
     setAuth(a);
+    // Persist the session if the user ticked "Remember me".
+    try {
+      if (remember) localStorage.setItem("anthem_auth", JSON.stringify(a));
+      else localStorage.removeItem("anthem_auth");
+    } catch {}
     if (pendingPlan) {
       const { plan, cycle } = pendingPlan;
       setPendingPlan(null);
@@ -371,7 +396,7 @@ export default function App() {
       `}</style>
       {view === "landing" && <Landing onLaunch={launch} onCheckout={startCheckout} />}
       {view === "login" && <Login onAuthed={afterLogin} onBack={() => setView("landing")} />}
-      {view === "dashboard" && <Dashboard auth={auth} onExit={() => setView("landing")} />}
+      {view === "dashboard" && <Dashboard auth={auth} onExit={() => setView("landing")} onLogout={logout} />}
     </div>
   );
 }
@@ -659,6 +684,7 @@ function Login({ onAuthed, onBack }) {
   const [ref, setRef] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(true); // stay logged in by default
 
   async function submit() {
     setErr(""); setBusy(true);
@@ -666,7 +692,7 @@ function Login({ onAuthed, onBack }) {
       const res = mode === "signup"
         ? await api.signup(email, password, ref || undefined)
         : await api.login(email, password);
-      onAuthed(res);
+      onAuthed(res, remember);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 
@@ -689,6 +715,11 @@ function Login({ onAuthed, onBack }) {
             <input value={ref} onChange={e => setRef(e.target.value)} placeholder="Referral code (optional)" style={inp} />
           )}
           {err && <div style={{ color: C.rust, fontSize: 13 }}>{err}</div>}
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.soft, cursor: "pointer" }}>
+            <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}
+              style={{ width: 16, height: 16, accentColor: C.rust, cursor: "pointer" }} />
+            Remember me on this device
+          </label>
           <button onClick={submit} disabled={busy}
             style={{ ...btn(C.rust), justifyContent: "center", opacity: busy ? .6 : 1 }}>
             {busy ? "…" : mode === "signup" ? "Create studio" : "Log in"}
@@ -710,7 +741,7 @@ function Login({ onAuthed, onBack }) {
 }
 
 /* ============================ DASHBOARD ============================ */
-function Dashboard({ auth, onExit }) {
+function Dashboard({ auth, onExit, onLogout }) {
   const [tab, setTab] = useState("overview");
   // Artist profile lives here so every agent can read it (the "memory").
   const [profile, setProfile] = useState(null);
@@ -796,6 +827,10 @@ function Dashboard({ auth, onExit }) {
         </div>
         <button onClick={onExit} style={{ ...btn("transparent"), width: "100%", justifyContent: "center", marginTop: 12, fontSize: 13 }}>
           ← Back to site
+        </button>
+        <button onClick={onLogout} style={{ ...btn("transparent"), width: "100%", justifyContent: "center",
+          marginTop: 8, fontSize: 13, color: C.rust }}>
+          Log out
         </button>
       </aside>
 
