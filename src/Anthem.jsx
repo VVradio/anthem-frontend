@@ -235,6 +235,46 @@ const api = {
     if (!r.ok) throw new Error("Could not load referrals");
     return r.json();
   },
+  async forgotPassword(email) {
+    const r = await fetch(`${API_BASE}/api/auth/forgot`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    return r.json();
+  },
+  async resetPassword(token, password) {
+    const r = await fetch(`${API_BASE}/api/auth/reset`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not reset");
+    return r.json();
+  },
+  async adminUsers(token) {
+    const r = await fetch(`${API_BASE}/api/admin/users`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not load");
+    return r.json();
+  },
+  async adminSetPlan(token, id, plan) {
+    const r = await fetch(`${API_BASE}/api/admin/user/${id}/plan`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ plan }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not update");
+    return r.json();
+  },
+  async cancelPlan(token) {
+    const r = await fetch(`${API_BASE}/api/billing/cancel`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not cancel");
+    return r.json();
+  },
+  async billingPortal(token) {
+    const r = await fetch(`${API_BASE}/api/billing/portal`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not open billing");
+    return r.json();
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -343,6 +383,7 @@ export default function App() {
   const [view, setView] = useState("landing");
   const [auth, setAuth] = useState(null); // { token, user }
   const [pendingPlan, setPendingPlan] = useState(null); // { plan, cycle } chosen before login
+  const [resetToken, setResetToken] = useState(null);
 
   // Restore a remembered session on load (if the user chose "Remember me").
   useEffect(() => {
@@ -360,6 +401,11 @@ export default function App() {
     try {
       const m = /[?&]ref=([^&]+)/.exec(window.location.search);
       if (m && m[1]) localStorage.setItem("anthem_ref", decodeURIComponent(m[1]));
+    } catch {}
+    // If they followed a password reset link (?reset=TOKEN), show the reset screen.
+    try {
+      const rm = /[?&]reset=([^&]+)/.exec(window.location.search);
+      if (rm && rm[1]) { setResetToken(decodeURIComponent(rm[1])); setView("reset"); }
     } catch {}
   }, []);
 
@@ -424,6 +470,7 @@ export default function App() {
       `}</style>
       {view === "landing" && <Landing onLaunch={launch} onCheckout={startCheckout} />}
       {view === "login" && <Login onAuthed={afterLogin} onBack={() => setView("landing")} />}
+      {view === "reset" && <ResetPassword token={resetToken} onDone={() => { setResetToken(null); setView("login"); }} />}
       {view === "dashboard" && <Dashboard auth={auth} onExit={() => setView("landing")} onLogout={logout} />}
     </div>
   );
@@ -716,6 +763,7 @@ function Login({ onAuthed, onBack }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [remember, setRemember] = useState(true); // stay logged in by default
+  const [sentReset, setSentReset] = useState(false);
 
   async function submit() {
     setErr(""); setBusy(true);
@@ -752,6 +800,22 @@ function Login({ onAuthed, onBack }) {
               style={{ width: 16, height: 16, accentColor: C.rust, cursor: "pointer" }} />
             Remember me on this device
           </label>
+          {mode !== "signup" && (
+            <button onClick={async () => {
+                if (!email) { setErr("Enter your email above first, then tap this."); return; }
+                setErr(""); try { await api.forgotPassword(email); } catch {}
+                setSentReset(true);
+              }}
+              style={{ background: "none", border: "none", color: C.soft, cursor: "pointer",
+                fontFamily: FONT_BODY, fontSize: 13, textAlign: "left", padding: 0 }}>
+              Forgot password?
+            </button>
+          )}
+          {sentReset && (
+            <div style={{ color: C.sage, fontSize: 13 }}>
+              If that email has an account, we sent a reset link. Check your inbox (and spam).
+            </div>
+          )}
           <button onClick={submit} disabled={busy}
             style={{ ...btn(C.rust), justifyContent: "center", opacity: busy ? .6 : 1 }}>
             {busy ? "…" : mode === "signup" ? "Create studio" : "Log in"}
@@ -767,6 +831,56 @@ function Login({ onAuthed, onBack }) {
             ← Back
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ RESET PASSWORD ============================ */
+function ResetPassword({ token, onDone }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function submit() {
+    setErr("");
+    if (password.length < 4) { setErr("Password must be at least 4 characters."); return; }
+    if (password !== confirm) { setErr("Passwords don't match."); return; }
+    setBusy(true);
+    try {
+      await api.resetPassword(token, password);
+      setDone(true);
+      setTimeout(onDone, 1800);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20 }}>
+      <div className="rise" style={{ ...card, width: "100%", maxWidth: 400, padding: 30 }}>
+        <Logo />
+        <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 600, margin: "18px 0 4px" }}>
+          {done ? "Password updated" : "Set a new password"}
+        </h2>
+        {done ? (
+          <p style={{ color: C.sage, fontSize: 14 }}>You're all set — taking you to log in…</p>
+        ) : (
+          <>
+            <p style={{ color: C.soft, fontSize: 14, marginTop: 0 }}>Choose a new password for your account.</p>
+            <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+              <input value={password} onChange={e => setPassword(e.target.value)} placeholder="New password"
+                style={inp} type="password" />
+              <input value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Confirm new password"
+                style={inp} type="password" onKeyDown={e => e.key === "Enter" && submit()} />
+              {err && <div style={{ color: C.rust, fontSize: 13 }}>{err}</div>}
+              <button onClick={submit} disabled={busy}
+                style={{ ...btn(C.rust), justifyContent: "center", opacity: busy ? .6 : 1 }}>
+                {busy ? "…" : "Update password"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -814,7 +928,9 @@ function Dashboard({ auth, onExit, onLogout }) {
     { id: "history", label: "History", icon: Clock, color: C.teal },
     { id: "team", label: "Team", icon: Users2, color: C.plum },
     { id: "referral", label: "Referrals", icon: Gift },
+    { id: "billing", label: "Billing & plan", icon: Wallet, color: C.teal },
     { id: "features", label: "Request Features", icon: Sparkles, color: C.gold },
+    ...(auth?.user?.owner ? [{ id: "admin", label: "Admin", icon: Users2, color: C.rust }] : []),
   ];
   const planLabel = { trial: "Free Trial", indie: "Indie", artist: "Artist", label: "Label" }[plan] || "Indie";
   const daysLeft = plan === "trial" ? trialDaysLeft(auth?.user) : null;
@@ -891,7 +1007,9 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "history" && <HistoryPanel auth={auth} onOpenAgent={setTab} />}
         {tab === "team" && <TeamPanel auth={auth} onUpgrade={() => onExit()} />}
         {tab === "features" && <FeaturesPanel auth={auth} />}
+        {tab === "admin" && auth?.user?.owner && <AdminPanel auth={auth} />}
         {tab === "referral" && <ReferralPanel auth={auth} />}
+        {tab === "billing" && <BillingPanel auth={auth} plan={plan} planLabel={planLabel} onUpgrade={() => onExit()} />}
         {AGENTS.map(a => tab === a.id && (
           planAllows(plan, a.id, auth?.user)
             ? <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} setSaved={setSaved} />
@@ -2363,6 +2481,164 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
         </button>
       </div>
       </>}
+    </div>
+  );
+}
+
+/* ---- Billing & plan: manage subscription, cancel ---- */
+function BillingPanel({ auth, plan, planLabel, onUpgrade }) {
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [canceled, setCanceled] = useState(false);
+  const isOwner = auth?.user?.owner;
+
+  async function openPortal() {
+    setBusy(true);
+    try { const { url } = await api.billingPortal(auth.token); window.location.href = url; }
+    catch (e) { alert(e.message || "Couldn't open billing."); setBusy(false); }
+  }
+  async function doCancel() {
+    setBusy(true);
+    try { await api.cancelPlan(auth.token); setCanceled(true); setConfirming(false); }
+    catch (e) { alert(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rise">
+      <PageTitle title="Billing & plan" sub="Manage your subscription." />
+
+      <div style={{ ...card, marginBottom: 18 }}>
+        <div style={{ color: C.soft, fontSize: 13 }}>Current plan</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 600, color: C.rust, margin: "2px 0 4px" }}>
+          {isOwner ? "Owner — full access" : (canceled ? "Canceled" : planLabel)}
+        </div>
+        {isOwner && <div style={{ color: C.soft, fontSize: 13 }}>You have permanent full access.</div>}
+        {canceled && <div style={{ color: C.soft, fontSize: 13 }}>Your plan has been canceled. You'll keep access until the end of your billing period.</div>}
+      </div>
+
+      {!isOwner && (
+        <>
+          <div style={{ ...card, marginBottom: 18 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Manage payment & subscription</div>
+            <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>
+              Update your card, view invoices, or cancel through our secure billing portal.
+            </p>
+            <button onClick={openPortal} disabled={busy} style={{ ...btn(C.teal), opacity: busy ? .6 : 1 }}>
+              <Wallet size={16} /> Open billing portal
+            </button>
+          </div>
+
+          <div style={{ ...card, marginBottom: 18 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Upgrade or change plan</div>
+            <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>Want more agents or seats? See plans.</p>
+            <button onClick={onUpgrade} style={btn(C.rust)}>View plans</button>
+          </div>
+
+          {!canceled && (
+            <div style={{ ...card, borderColor: C.line }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Cancel plan</div>
+              {!confirming ? (
+                <>
+                  <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>
+                    You'll keep access until the end of your current billing period.
+                  </p>
+                  <button onClick={() => setConfirming(true)} style={{ ...btn("transparent"), color: C.rust, borderColor: C.rust }}>
+                    Cancel my plan
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize: 14, marginTop: 0 }}>Are you sure you want to cancel?</p>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={doCancel} disabled={busy} style={{ ...btn(C.rust), opacity: busy ? .6 : 1 }}>
+                      {busy ? "…" : "Yes, cancel"}
+                    </button>
+                    <button onClick={() => setConfirming(false)} style={btn("transparent")}>Keep my plan</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---- Admin (owner only): see all signups, comp/change plans ---- */
+function AdminPanel({ auth }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+
+  async function load() {
+    try { setData(await api.adminUsers(auth.token)); }
+    catch (e) { setErr(e.message); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function setPlan(id, plan) {
+    try { await api.adminSetPlan(auth.token, id, plan); load(); }
+    catch (e) { alert(e.message); }
+  }
+
+  const fmtDate = d => { try { return new Date(d).toLocaleDateString(); } catch { return "—"; } };
+  const planColor = { trial: C.gold, indie: C.teal, artist: C.rust, label: C.plum, canceled: C.soft };
+
+  return (
+    <div className="rise">
+      <PageTitle title="Admin" sub="Everyone who's signed up — owner only." />
+      {err && <div style={{ ...card, color: C.rust, marginBottom: 16 }}>{err}</div>}
+
+      {data && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 14, marginBottom: 22 }}>
+            <div style={card}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: C.ink }}>{data.totals.total}</div>
+              <div style={{ color: C.soft, fontSize: 13 }}>Total signups</div>
+            </div>
+            {Object.entries(data.totals.byPlan).map(([plan, n]) => (
+              <div key={plan} style={card}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: planColor[plan] || C.ink }}>{n}</div>
+                <div style={{ color: C.soft, fontSize: 13, textTransform: "capitalize" }}>{plan}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={card}>
+            <div style={{ fontWeight: 700, marginBottom: 12 }}>All users</div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead><tr style={{ color: C.soft, textAlign: "left" }}>
+                  {["Email", "Plan", "Joined", "Actions"].map(h => <th key={h} style={{ padding: "8px 10px", fontWeight: 600 }}>{h}</th>)}
+                </tr></thead>
+                <tbody>{data.users.map(u => (
+                  <tr key={u.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                    <td style={{ padding: "10px", wordBreak: "break-all" }}>{u.email}</td>
+                    <td style={{ padding: "10px" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: planColor[u.plan] || C.ink,
+                        background: `${planColor[u.plan] || C.ink}18`, padding: "2px 9px", borderRadius: 20, textTransform: "capitalize" }}>
+                        {u.plan}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px", color: C.soft }}>{fmtDate(u.createdAt)}</td>
+                    <td style={{ padding: "10px" }}>
+                      <select value="" onChange={e => { if (e.target.value) setPlan(u.id, e.target.value); }}
+                        style={{ ...inp, padding: "6px 8px", fontSize: 12, width: "auto" }}>
+                        <option value="">Change…</option>
+                        <option value="label">Comp free (Label)</option>
+                        <option value="artist">Set Artist</option>
+                        <option value="indie">Set Indie</option>
+                        <option value="trial">Reset to Trial</option>
+                        <option value="canceled">Cancel</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
