@@ -5,7 +5,7 @@ import {
   TrendingUp, Calendar, DollarSign, Activity, Cpu, Copy, Headphones, Mic2,
   MessageCircle, Wallet, UserCircle, Rocket, Loader2, BarChart3, Music, Link2,
   FileText, Link as LinkIcon, ListChecks, PenTool, Inbox, Award, Mail as MailIcon,
-  ListMusic, Wrench, ArrowLeft, Clock, CalendarPlus, Download, X, Brain
+  ListMusic, Wrench, ArrowLeft, Clock, CalendarPlus, Download, X, Brain, Lock
 } from "lucide-react";
 
 /* ============================ THEME — clean & indie, warm ============================ */
@@ -168,6 +168,50 @@ const api = {
     if (!r.ok) throw new Error("Could not clear history");
     return r.json();
   },
+  async socialPost(token, text, platforms, imageUrl) {
+    const r = await fetch(`${API_BASE}/api/social/post`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ text, platforms, imageUrl }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Post failed");
+    return r.json();
+  },
+  async hostImage(token, dataUrl) {
+    const r = await fetch(`${API_BASE}/api/host/image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ dataUrl }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not host image");
+    return r.json(); // { url }
+  },
+  async getTeam(token) {
+    const r = await fetch(`${API_BASE}/api/team`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load team");
+    return r.json();
+  },
+  async inviteTeam(token, email) {
+    const r = await fetch(`${API_BASE}/api/team/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not invite");
+    return r.json();
+  },
+  async cancelInvite(token, id) {
+    const r = await fetch(`${API_BASE}/api/team/invite/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not cancel invite");
+    return r.json();
+  },
+  async removeMember(token, id) {
+    const r = await fetch(`${API_BASE}/api/team/member/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not remove member");
+    return r.json();
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -214,6 +258,43 @@ const AGENTS = [
     blurb: "Helps you budget tours, make sense of royalty income, plan for taxes, and understand your numbers — in plain English.",
     sample: "Let's make your money make sense. I can budget a tour, break down where your streaming income comes from, or explain what to set aside for taxes. Heads up: I'm a financial literacy coach, not a licensed advisor — take big decisions to a real accountant. What are we looking at?" },
 ];
+
+// Platforms artists can post to (all handled by Ayrshare through one API).
+const SOCIAL_PLATFORMS = [
+  { id: "instagram", label: "Instagram" },
+  { id: "facebook", label: "Facebook" },
+  { id: "twitter", label: "X (Twitter)" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "threads", label: "Threads" },
+  { id: "linkedin", label: "LinkedIn" },
+  { id: "youtube", label: "YouTube" },
+];
+
+// Which agents each plan unlocks. Indie = first 2; Artist/Label = all.
+const PLAN_AGENTS = {
+  indie: ["anr", "social"],
+  artist: ["anr", "social", "booking", "legal", "image", "blog", "chat", "finance"],
+  label: ["anr", "social", "booking", "legal", "image", "blog", "chat", "finance"],
+};
+const TRIAL_DAYS = 2;
+// Is a new (trial) user still inside their free window?
+function inTrial(user) {
+  if (!user?.createdAt) return false;
+  const t = new Date(user.createdAt).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t < TRIAL_DAYS * 24 * 60 * 60 * 1000;
+}
+// Days left in trial (0 if none / expired).
+function trialDaysLeft(user) {
+  if (!user?.createdAt) return 0;
+  const t = new Date(user.createdAt).getTime();
+  const left = TRIAL_DAYS * 24 * 60 * 60 * 1000 - (Date.now() - t);
+  return left > 0 ? Math.ceil(left / (24 * 60 * 60 * 1000)) : 0;
+}
+function planAllows(plan, agentId, user) {
+  if (plan === "trial") return inTrial(user); // trial = everything for 2 days, then nothing
+  return (PLAN_AGENTS[plan] || PLAN_AGENTS.indie).includes(agentId);
+}
 
 const PLANS = [
   { name: "Indie", id: "indie", price: 29, tag: "Solo & emerging artists", accent: C.teal,
@@ -668,9 +749,11 @@ function Dashboard({ auth, onExit }) {
     { id: "brain", label: "Brain", icon: Brain, color: C.plum },
     { id: "saved", label: "Saved", icon: Inbox, color: C.clay },
     { id: "history", label: "History", icon: Clock, color: C.teal },
+    { id: "team", label: "Team", icon: Users2, color: C.plum },
     { id: "referral", label: "Referrals", icon: Gift },
   ];
-  const planLabel = { indie: "Indie", artist: "Artist", label: "Label" }[plan] || "Indie";
+  const planLabel = { trial: "Free Trial", indie: "Indie", artist: "Artist", label: "Label" }[plan] || "Indie";
+  const daysLeft = plan === "trial" ? trialDaysLeft(auth?.user) : null;
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <aside className="scroll" style={{ width: 234, borderRight: `1px solid ${C.line}`, background: C.cream,
@@ -686,7 +769,10 @@ function Dashboard({ auth, onExit }) {
               background: active ? C.paper : "transparent",
               color: active ? C.ink : C.soft,
               borderLeft: `3px solid ${active ? (n.color || C.rust) : "transparent"}`, fontWeight: active ? 600 : 400 }}>
-              <n.icon size={18} color={active ? (n.color || C.rust) : C.soft} /> {n.label}
+              <n.icon size={18} color={active ? (n.color || C.rust) : C.soft} />
+              <span style={{ flex: 1 }}>{n.label}</span>
+              {AGENTS.some(a => a.id === n.id) && !planAllows(plan, n.id, auth?.user) &&
+                <Lock size={13} color={C.soft} />}
             </button>
           );
         })}
@@ -696,8 +782,13 @@ function Dashboard({ auth, onExit }) {
           <div style={{ fontSize: 11, color: C.soft, textTransform: "uppercase", letterSpacing: .5 }}>Your plan</div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
             <span style={{ fontWeight: 700, fontSize: 15 }}>{planLabel}</span>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.sage }} />
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: (plan === "trial" && daysLeft === 0) ? C.rust : C.sage }} />
           </div>
+          {plan === "trial" && (
+            <div style={{ fontSize: 12, color: daysLeft > 0 ? C.soft : C.rust, marginTop: 4 }}>
+              {daysLeft > 0 ? `${daysLeft} day${daysLeft > 1 ? "s" : ""} left — then pick a plan` : "Trial ended — choose a plan"}
+            </div>
+          )}
           <button onClick={() => onExit()} style={{ ...btn("transparent"), width: "100%", justifyContent: "center",
             marginTop: 8, fontSize: 12, padding: "7px 10px" }}>
             {plan === "label" ? "Manage" : "Upgrade"}
@@ -730,8 +821,13 @@ function Dashboard({ auth, onExit }) {
         {tab === "saved" && <SavedPanel auth={auth} saved={saved} setSaved={setSaved} />}
         {tab === "brain" && <BrainPanel auth={auth} />}
         {tab === "history" && <HistoryPanel auth={auth} onOpenAgent={setTab} />}
+        {tab === "team" && <TeamPanel auth={auth} onUpgrade={() => onExit()} />}
         {tab === "referral" && <ReferralPanel />}
-        {AGENTS.map(a => tab === a.id && <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} setSaved={setSaved} />)}
+        {AGENTS.map(a => tab === a.id && (
+          planAllows(plan, a.id, auth?.user)
+            ? <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} setSaved={setSaved} />
+            : <LockedAgent key={a.id} agent={a} plan={plan} user={auth?.user} onUpgrade={() => onExit()} />
+        ))}
       </main>
     </div>
   );
@@ -1606,10 +1702,10 @@ function SavedPanel({ auth, saved, setSaved }) {
                 <span style={{ color: C.soft, fontSize: 12 }}>{item.when}</span>
                 <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
                   {isImage ? (
-                    <a href={item.text} download={`${(item.tool || "anthem").replace(/\s+/g, "-")}.png`}
+                    <button onClick={() => saveImage(item.text, `${(item.tool || "anthem").replace(/\s+/g, "-")}.png`)}
                       style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
                       <Download size={15} /> Download
-                    </a>
+                    </button>
                   ) : (
                     <>
                       <CopyButton text={item.text} />
@@ -1641,6 +1737,19 @@ function SavedPanel({ auth, saved, setSaved }) {
   );
 }
 
+// Each agent gets a second "work" tab (like Marblism's Chat / Posts / Docs).
+// label = tab name, kind = what it shows.
+const WORK_TABS = {
+  social:  { label: "Posts",     kind: "saved-images" },
+  image:   { label: "Gallery",   kind: "saved-images" },
+  blog:    { label: "Drafts",    kind: "saved-text" },
+  legal:   { label: "Documents", kind: "saved-text" },
+  anr:     { label: "Plans",     kind: "saved-text" },
+  booking: { label: "Outreach",  kind: "saved-text" },
+  finance: { label: "Notes",     kind: "saved-text" },
+  chat:    { label: "Snippets",  kind: "saved-text" },
+};
+
 const AGENT_SYSTEMS = {
   anr: "You are Nora, an AI A&R and music career strategist. Advise artists on release strategy, audience growth, positioning, and honest creative direction. Be specific and practical. Be concise.",
   social: "You are Mia, an AI social media and fan-engagement manager for musicians. Plan release content, write captions in the artist's voice, and grow fan loyalty. Be punchy and concise.",
@@ -1652,6 +1761,140 @@ const AGENT_SYSTEMS = {
   image: "You are Iris, an AI cover-art and promo image maker for musicians. You generate a single self-contained SVG image (viewBox 0 0 400 400) based on the description. Use gradients, shapes, and typography tastefully. Respond with ONLY the raw <svg>...</svg> markup, no backticks, no explanation.",
 };
 
+// Shown instead of an agent's chat when the user's plan doesn't include it.
+function LockedAgent({ agent, plan, user, onUpgrade }) {
+  const trialExpired = plan === "trial"; // reaches here only if trial ended
+  // Cheapest paid plan that unlocks this agent.
+  const needed = ["indie", "artist", "label"].find(p => (PLAN_AGENTS[p] || []).includes(agent.id)) || "artist";
+  const planName = { indie: "Indie", artist: "Artist", label: "Label" }[needed];
+  const planPrice = { indie: 29, artist: 79, label: 249 }[needed];
+  return (
+    <div className="rise" style={{ display: "grid", placeItems: "center", minHeight: "60vh" }}>
+      <div style={{ ...card, maxWidth: 420, textAlign: "center", padding: 40 }}>
+        <div style={{ width: 64, height: 64, borderRadius: 16, margin: "0 auto 16px", background: `${agent.color}18`,
+          border: `1px solid ${agent.color}40`, display: "grid", placeItems: "center", position: "relative" }}>
+          <agent.icon size={30} color={agent.color} />
+          <div style={{ position: "absolute", bottom: -6, right: -6, width: 26, height: 26, borderRadius: "50%",
+            background: C.ink, display: "grid", placeItems: "center" }}>
+            <Lock size={13} color="#fff" />
+          </div>
+        </div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 600 }}>
+          {trialExpired ? "Your free trial has ended" : `${agent.name} is locked`}
+        </div>
+        <div style={{ color: agent.color, fontSize: 12, fontWeight: 600, textTransform: "uppercase",
+          letterSpacing: .4, marginTop: 4 }}>{agent.role}</div>
+        <p style={{ color: C.soft, fontSize: 14, lineHeight: 1.55, marginTop: 12 }}>
+          {trialExpired
+            ? `Your 2-day free trial is over. Choose a plan to keep working with ${agent.name} and the rest of your team.`
+            : agent.blurb}
+        </p>
+        <div style={{ background: C.paper, border: `1px solid ${C.line}`, borderRadius: 12, padding: 16, margin: "16px 0" }}>
+          <div style={{ fontSize: 14 }}>
+            {trialExpired ? "Plans start at" : <>Unlock {agent.name} with the <strong>{planName}</strong> plan</>}
+          </div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, marginTop: 4 }}>
+            ${trialExpired ? 29 : planPrice}<span style={{ fontSize: 14, color: C.soft, fontWeight: 400 }}>/mo</span>
+          </div>
+        </div>
+        <button onClick={onUpgrade} style={{ ...btn(agent.color), width: "100%", justifyContent: "center" }}>
+          <Rocket size={16} /> {trialExpired ? "Choose a plan" : `Upgrade to ${planName}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// The per-agent "work" tab — shows what this agent has produced and saved
+// (Marblism-style Posts/Documents/Gallery). Pulls from the saved-items store.
+function AgentWorkTab({ agent, auth, setSaved }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const cfg = WORK_TABS[agent.id] || { label: "Saved", kind: "saved-text" };
+  const wantImages = cfg.kind === "saved-images";
+
+  useEffect(() => {
+    if (api.live() && auth?.token) {
+      setLoading(true);
+      api.listSaved(auth.token)
+        .then(d => setItems((d.items || []).map(i => ({
+          id: i.id, tool: i.tool, text: i.text, when: new Date(i.when).toLocaleString(),
+        }))))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [auth]);
+
+  // Show items this agent made (matched by the tool/name we save under).
+  const mine = items.filter(it => {
+    const isImg = typeof it.text === "string" && it.text.startsWith("data:image");
+    const fromAgent = (it.tool || "").toLowerCase().includes(agent.name.toLowerCase());
+    return wantImages ? isImg : (!isImg && fromAgent);
+  });
+
+  function remove(id) {
+    setItems(list => list.filter(s => s.id !== id));
+    setSaved?.(list => (list || []).filter(s => s.id !== id));
+    if (api.live() && auth?.token) api.deleteSaved(auth.token, id).catch(() => {});
+  }
+
+  if (loading) return <div style={{ color: C.soft, fontSize: 13 }}>Loading…</div>;
+  if (!mine.length) {
+    return (
+      <div style={{ ...card, textAlign: "center", padding: 40 }}>
+        <Inbox size={30} color={C.soft} style={{ margin: "0 auto 10px" }} />
+        <div style={{ fontWeight: 600 }}>No {cfg.label.toLowerCase()} yet</div>
+        <p style={{ color: C.soft, fontSize: 14, marginTop: 6 }}>
+          When you save {agent.name}'s {wantImages ? "images" : "work"} from the Chat tab, it shows up here.
+        </p>
+      </div>
+    );
+  }
+
+  if (wantImages) {
+    return (
+      <div className="scroll" style={{ flex: 1, overflow: "auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 12 }}>
+          {mine.map(it => (
+            <div key={it.id} style={{ border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", background: C.card }}>
+              <img src={it.text} alt="" style={{ width: "100%", display: "block", aspectRatio: "1", objectFit: "cover" }} />
+              <div style={{ display: "flex", gap: 6, padding: 8 }}>
+                <button onClick={() => saveImage(it.text, "anthem-image.png")}
+                  style={{ ...btn("transparent"), fontSize: 12, padding: "6px 10px", flex: 1, justifyContent: "center" }}>
+                  <Download size={13} /> Save
+                </button>
+                <button onClick={() => remove(it.id)}
+                  style={{ ...btn("transparent"), fontSize: 12, padding: "6px 10px", color: C.rust }}>
+                  <X size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="scroll" style={{ flex: 1, overflow: "auto", display: "grid", gap: 12 }}>
+      {mine.map(it => (
+        <div key={it.id} style={card}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{it.tool}</span>
+            <span style={{ color: C.soft, fontSize: 12 }}>{it.when}</span>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+              <CopyButton text={it.text} />
+              <button onClick={() => remove(it.id)}
+                style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px", color: C.rust }}>Delete</button>
+            </div>
+          </div>
+          <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.55, color: C.ink, maxHeight: 200, overflow: "auto" }}>{it.text}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AgentPanel({ agent, auth, profile, setSaved }) {
   const [msgs, setMsgs] = useState([{ role: "assistant", text: agent.sample }]);
   const [input, setInput] = useState("");
@@ -1660,9 +1903,10 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   const [attached, setAttached] = useState(null); // { name, text }
   const [loaded, setLoaded] = useState(false); // history loaded yet?
   const [savedTick, setSavedTick] = useState(false); // shows "Saved" briefly
+  const [view, setView] = useState("chat"); // chat | work
   const fileRef = useRef(null);
   const endRef = useRef(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy, view]);
 
   // Load saved conversation when opening this agent (live mode only).
   useEffect(() => {
@@ -1843,6 +2087,26 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
         </button>
       </div>
 
+      {/* Chat / work tabs (Marblism-style) */}
+      <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.line}`, marginBottom: 14 }}>
+        {[{ id: "chat", label: "Chat", icon: MessageCircle },
+          { id: "work", label: WORK_TABS[agent.id]?.label || "Saved", icon: Inbox }].map(t => (
+          <button key={t.id} onClick={() => setView(t.id)}
+            style={{ display: "flex", alignItems: "center", gap: 7, background: "none", border: "none",
+              cursor: "pointer", fontFamily: FONT_BODY, fontSize: 14, padding: "10px 16px",
+              color: view === t.id ? C.ink : C.soft, fontWeight: view === t.id ? 600 : 400,
+              borderBottom: `2px solid ${view === t.id ? agent.color : "transparent"}`, marginBottom: -1 }}>
+            <t.icon size={16} color={view === t.id ? agent.color : C.soft} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {view === "work" && (
+        <AgentWorkTab agent={agent} auth={auth} setSaved={setSaved} />
+      )}
+
+      {view === "chat" && <>
+
       <div className="scroll" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 6 }}>
         {msgs.map((m, i) => (
           <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "78%" }}>
@@ -1866,10 +2130,10 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
                 <img src={m.img} alt="Generated artwork" style={{ width: 320, maxWidth: "100%",
                   borderRadius: 14, border: `1px solid ${C.line}`, display: "block" }} />
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <a href={m.img} download="anthem-artwork.png"
+                  <button onClick={() => saveImage(m.img, "anthem-artwork.png")}
                     style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
                     <Download size={15} /> Download
-                  </a>
+                  </button>
                   <button onClick={() => {
                       const item = { id: Date.now(), tool: `${agent.name} image`, text: m.img, when: new Date().toLocaleString() };
                       setSaved?.(list => [item, ...(list || [])]);
@@ -1878,6 +2142,7 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
                     style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
                     <Inbox size={15} /> Save
                   </button>
+                  {agent.id === "social" && <PostMenu token={auth?.token} image={m.img} />}
                 </div>
               </div>
             )}
@@ -1896,6 +2161,7 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
                 {(agent.id === "social" || agent.id === "blog") && (
                   <ScheduleReminder defaultTitle={agent.id === "social" ? "Post this to social" : "Publish this"} />
                 )}
+                {agent.id === "social" && <PostMenu token={auth?.token} text={m.text} />}
               </div>
             )}
           </div>
@@ -1944,6 +2210,135 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
           <Send size={17} />
         </button>
       </div>
+      </>}
+    </div>
+  );
+}
+
+/* ---- Team: invite members ($10/seat), shared workspace ---- */
+function TeamPanel({ auth, onUpgrade }) {
+  const [data, setData] = useState(null);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  function load() {
+    if (api.live() && auth?.token) {
+      api.getTeam(auth.token).then(setData).catch(() => {});
+    }
+  }
+  useEffect(load, [auth]);
+
+  async function invite() {
+    const e = email.trim();
+    if (!e || busy) return;
+    setBusy(true); setMsg("");
+    try {
+      const r = await api.inviteTeam(auth.token, e);
+      setEmail(""); setMsg(r.note || "Invite sent!");
+      load();
+    } catch (err) { setMsg(err.message || "Couldn't invite."); }
+    finally { setBusy(false); }
+  }
+
+  async function cancel(id) { await api.cancelInvite(auth.token, id).catch(() => {}); load(); }
+  async function remove(id) { await api.removeMember(auth.token, id).catch(() => {}); load(); }
+
+  if (!api.live()) {
+    return (
+      <div className="rise">
+        <PageTitle title="Team" sub="Invite teammates to share your Anthem workspace." />
+        <div style={{ ...card, color: C.soft }}>Team features are available on the live site once you're logged in.</div>
+      </div>
+    );
+  }
+
+  const seatPrice = data?.seatPrice || 10;
+  const memberCount = data?.members?.length || 1;
+  const extraSeats = Math.max(0, memberCount - 1 + (data?.invites?.length || 0));
+
+  return (
+    <div className="rise">
+      <PageTitle title="Team" sub={`Invite teammates to share your workspace — $${seatPrice}/seat per month.`} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 14, marginBottom: 18 }}>
+        <div style={card}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: C.plum }}>{memberCount}</div>
+          <div style={{ color: C.soft, fontSize: 13 }}>Team members</div>
+        </div>
+        <div style={card}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: C.teal }}>{data?.invites?.length || 0}</div>
+          <div style={{ color: C.soft, fontSize: 13 }}>Pending invites</div>
+        </div>
+        <div style={card}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: C.rust }}>${extraSeats * seatPrice}</div>
+          <div style={{ color: C.soft, fontSize: 13 }}>Seats / month ({extraSeats} × ${seatPrice})</div>
+        </div>
+      </div>
+
+      {data?.isOwner ? (
+        <div style={{ ...card, marginBottom: 18 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Invite a teammate</div>
+          <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>
+            They'll join your shared workspace (same agents, Brain, and saved work) when they sign up with this email. Each extra seat is ${seatPrice}/month.
+          </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="teammate@email.com"
+              onKeyDown={e => e.key === "Enter" && invite()} style={{ ...inp, flex: 1, minWidth: 220 }} />
+            <button onClick={invite} disabled={busy} style={{ ...btn(C.plum), opacity: busy ? .6 : 1 }}>
+              <UserCircle size={16} /> {busy ? "Inviting…" : "Invite"}
+            </button>
+          </div>
+          {msg && <div style={{ color: C.soft, fontSize: 13, marginTop: 8 }}>{msg}</div>}
+        </div>
+      ) : (
+        <div style={{ ...card, marginBottom: 18, color: C.soft, fontSize: 14 }}>
+          You're a member of this team's shared workspace. Only the team owner can invite or remove members.
+        </div>
+      )}
+
+      <div style={{ ...card, marginBottom: 14 }}>
+        <div style={{ fontWeight: 700, marginBottom: 12 }}>Members</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {(data?.members || []).map(m => (
+            <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12,
+              padding: "10px 0", borderTop: `1px solid ${C.line}` }}>
+              <div style={{ width: 38, height: 38, borderRadius: "50%", background: `${C.plum}22`,
+                display: "grid", placeItems: "center", color: C.plum, fontWeight: 700 }}>
+                {m.email[0].toUpperCase()}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{m.email}</div>
+                <div style={{ color: C.soft, fontSize: 12 }}>{m.isOwner ? "Owner" : "Member"}</div>
+              </div>
+              {data?.isOwner && !m.isOwner && (
+                <button onClick={() => remove(m.id)}
+                  style={{ ...btn("transparent"), fontSize: 13, padding: "7px 12px", color: C.rust }}>Remove</button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {(data?.invites?.length > 0) && (
+        <div style={card}>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Pending invites</div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {data.invites.map(i => (
+              <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 0", borderTop: `1px solid ${C.line}` }}>
+                <Clock size={18} color={C.soft} />
+                <div style={{ flex: 1, fontSize: 14 }}>{i.email}</div>
+                <span style={{ color: C.gold, fontSize: 12, fontWeight: 600 }}>Pending</span>
+                {data?.isOwner && (
+                  <button onClick={() => cancel(i.id)}
+                    style={{ ...btn("transparent"), fontSize: 13, padding: "7px 12px" }}>Cancel</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1970,11 +2365,50 @@ function ReferralPanel() {
       </div>
       <div style={{ ...card, marginBottom: 22 }}>
         <div style={{ color: C.soft, fontSize: 13, marginBottom: 8 }}>Your artist referral link</div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
           <code style={{ flex: 1, minWidth: 240, background: C.paper, border: `1px solid ${C.line}`,
             padding: "12px 14px", borderRadius: 10, color: C.rust, fontSize: 13 }}>{link}</code>
           <button onClick={() => { navigator.clipboard?.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
             style={btn(C.rust)}>{copied ? <Check size={16} /> : <Copy size={16} />} {copied ? "Copied" : "Copy"}</button>
+        </div>
+
+        {/* Shareable card — the image + text fans see when you share */}
+        <div style={{ color: C.soft, fontSize: 13, marginBottom: 8 }}>Share this with other artists</div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ width: 200, borderRadius: 14, overflow: "hidden", border: `1px solid ${C.line}`, flexShrink: 0 }}>
+            <div style={{ height: 120, background: `linear-gradient(135deg, ${C.rust}, ${C.plum})`,
+              display: "grid", placeItems: "center", position: "relative" }}>
+              <Disc3 size={44} color="#fff" />
+              <span style={{ position: "absolute", bottom: 8, right: 10, background: "rgba(0,0,0,.35)",
+                color: "#fff", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 20 }}>30% OFF</span>
+            </div>
+            <div style={{ padding: "12px 14px" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 600, fontSize: 16 }}>Join me on Anthem</div>
+              <div style={{ color: C.soft, fontSize: 12, marginTop: 2 }}>Your AI music team — get 20% off your first 3 months.</div>
+            </div>
+          </div>
+
+          <div style={{ flex: 1, minWidth: 220, display: "grid", gap: 10 }}>
+            <p style={{ color: C.soft, fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+              Share the card and your link anywhere. When an artist joins, they get 20% off and you earn 30% recurring.
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={async () => {
+                  const shareData = { title: "Anthem", text: "Join me on Anthem — your AI music team. 20% off your first 3 months:", url: link };
+                  if (navigator.share) { try { await navigator.share(shareData); } catch {} }
+                  else { navigator.clipboard?.writeText(`${shareData.text} ${link}`); alert("Share text copied!"); }
+                }}
+                style={btn(C.rust)}>
+                <Send size={15} /> Share
+              </button>
+              <a href={`https://wa.me/?text=${encodeURIComponent("Join me on Anthem — your AI music team. 20% off your first 3 months: " + link)}`}
+                target="_blank" rel="noreferrer" style={{ ...btn("transparent"), fontSize: 13 }}>WhatsApp</a>
+              <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent("Join me on Anthem — 20% off your first 3 months:")}&url=${encodeURIComponent(link)}`}
+                target="_blank" rel="noreferrer" style={{ ...btn("transparent"), fontSize: 13 }}>X / Twitter</a>
+              <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`}
+                target="_blank" rel="noreferrer" style={{ ...btn("transparent"), fontSize: 13 }}>Facebook</a>
+            </div>
+          </div>
         </div>
       </div>
       <div style={card}>
@@ -2003,6 +2437,74 @@ function downloadText(filename, text) {
   const a = document.createElement("a");
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
+}
+
+// Saves an image (data URL) in a way that works on desktop AND mobile.
+// Desktop: triggers a normal download. Mobile (esp. iOS): the download attribute
+// is ignored, so we open the image full-screen and prompt a long-press to save.
+function saveImage(dataUrl, filename = "anthem-image.png") {
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isMobile) {
+    // Convert the data URL to a Blob URL and open it; user long-presses to save.
+    try {
+      const [meta, b64] = dataUrl.split(",");
+      const mime = (meta.match(/data:(.*?);/) || [])[1] || "image/png";
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([arr], { type: mime }));
+      window.open(url, "_blank");
+      // Give the new tab a moment before revoking.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      window.open(dataUrl, "_blank");
+    }
+  } else {
+    const a = document.createElement("a");
+    a.href = dataUrl; a.download = filename; a.click();
+  }
+}
+
+// A "Post" button that opens a small platform picker, then posts via the backend.
+function PostMenu({ token, text, image }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function post(pf) {
+    setBusy(true); setOpen(false);
+    try {
+      let imageUrl;
+      if (image) {
+        // Host the image first so the platform can fetch it from a public URL.
+        const { url } = await api.hostImage(token, image);
+        imageUrl = url;
+      }
+      await api.socialPost(token, text || "", [pf.id], imageUrl);
+      alert(`Posted to ${pf.label}! 🎉`);
+    } catch (e) {
+      alert(e.message || "Couldn't post.");
+    } finally { setBusy(false); }
+  }
+  return (
+    <span style={{ position: "relative", display: "inline-block" }}>
+      <button onClick={() => setOpen(o => !o)} disabled={busy}
+        style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px", opacity: busy ? .5 : 1 }}>
+        <Send size={15} /> {busy ? "Posting…" : "Post"}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", bottom: "110%", left: 0, zIndex: 20, background: C.card,
+          border: `1px solid ${C.line}`, borderRadius: 10, boxShadow: "0 12px 30px -12px rgba(31,26,22,.4)",
+          padding: 6, minWidth: 150 }}>
+          {SOCIAL_PLATFORMS.map(pf => (
+            <button key={pf.id} onClick={() => post(pf)}
+              style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none",
+                padding: "8px 12px", borderRadius: 7, cursor: "pointer", fontSize: 13, color: C.ink, fontFamily: FONT_BODY }}>
+              {pf.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  );
 }
 
 // One-click copy button for any AI-generated text.
