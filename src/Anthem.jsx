@@ -1001,7 +1001,8 @@ function Dashboard({ auth, onExit, onLogout }) {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <aside className="scroll" style={{ width: 234, borderRight: `1px solid ${C.line}`, background: C.cream,
-        padding: "20px 14px", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
+        padding: "20px 14px 40px", position: "sticky", top: 0, height: "100vh", maxHeight: "100vh", flexShrink: 0,
+        overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch" }}>
         <div style={{ padding: "0 6px 18px" }}><Logo /></div>
         {nav.map(n => {
           const active = tab === n.id;
