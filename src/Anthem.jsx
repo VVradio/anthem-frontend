@@ -321,6 +321,18 @@ const api = {
     if (!r.ok) throw new Error("Could not save settings");
     return r.json();
   },
+  async publishEpk(token, data) {
+    const r = await fetch(`${API_BASE}/api/epk/publish`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ data }) });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not publish");
+    return r.json(); // { shareCode }
+  },
+  async getEpk(code) {
+    const r = await fetch(`${API_BASE}/api/epk/${code}`);
+    if (!r.ok) throw new Error("Not found");
+    return r.json(); // { data }
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -449,6 +461,7 @@ export default function App() {
   const [auth, setAuth] = useState(null); // { token, user }
   const [pendingPlan, setPendingPlan] = useState(null); // { plan, cycle } chosen before login
   const [resetToken, setResetToken] = useState(null);
+  const [epkCode, setEpkCode] = useState(null);
 
   // Restore a remembered session on load (if the user chose "Remember me").
   useEffect(() => {
@@ -471,6 +484,11 @@ export default function App() {
     try {
       const rm = /[?&]reset=([^&]+)/.exec(window.location.search);
       if (rm && rm[1]) { setResetToken(decodeURIComponent(rm[1])); setView("reset"); }
+    } catch {}
+    // If they opened a public EPK link (?epk=CODE), show the public press kit.
+    try {
+      const em = /[?&]epk=([^&]+)/.exec(window.location.search);
+      if (em && em[1]) { setEpkCode(decodeURIComponent(em[1])); setView("epk"); }
     } catch {}
   }, []);
 
@@ -536,6 +554,7 @@ export default function App() {
       {view === "landing" && <Landing onLaunch={launch} onCheckout={startCheckout} />}
       {view === "login" && <Login onAuthed={afterLogin} onBack={() => setView("landing")} />}
       {view === "reset" && <ResetPassword token={resetToken} onDone={() => { setResetToken(null); setView("login"); }} />}
+      {view === "epk" && <PublicEPK code={epkCode} />}
       {view === "dashboard" && <Dashboard auth={auth} onExit={() => setView("landing")} onLogout={logout} />}
     </div>
   );
@@ -948,6 +967,60 @@ function ResetPassword({ token, onDone }) {
   );
 }
 
+/* ============================ PUBLIC EPK (press kit) ============================ */
+function PublicEPK({ code }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    api.getEpk(code).then(r => setData(r.data)).catch(() => setErr(true));
+  }, [code]);
+
+  if (err) return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20, textAlign: "center" }}>
+      <div><div style={{ fontFamily: FONT_DISPLAY, fontSize: 24 }}>Press kit not found</div>
+        <p style={{ color: C.soft }}>This link may be incorrect or no longer available.</p></div>
+    </div>
+  );
+  if (!data) return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}><Loader2 className="spin" /></div>;
+
+  const Section = ({ title, children }) => children ? (
+    <div style={{ margin: "18px 0" }}>
+      <h3 style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, color: C.rust, margin: "0 0 6px",
+        borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>{title}</h3>
+      <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 15 }}>{children}</div>
+    </div>
+  ) : null;
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.cream, padding: "40px 20px" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", background: C.card, borderRadius: 16,
+        border: `1px solid ${C.line}`, padding: 36, boxShadow: "0 20px 50px -20px rgba(31,26,22,.25)" }}>
+        <div style={{ display: "flex", gap: 22, alignItems: "center", borderBottom: `3px solid ${C.rust}`, paddingBottom: 20 }}>
+          {data.photo && <div style={{ width: 110, height: 110, borderRadius: 12, flexShrink: 0,
+            background: `center/cover url(${data.photo})`, border: `1px solid ${C.line}` }} />}
+          <div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 32, fontWeight: 600 }}>{data.name || "Artist"}</div>
+            {data.genre && <div style={{ color: C.rust, fontWeight: 600, marginTop: 2 }}>{data.genre}</div>}
+            <div style={{ color: C.soft, fontSize: 13, marginTop: 4 }}>{[data.location, data.stage].filter(Boolean).join(" · ")}</div>
+          </div>
+        </div>
+        <Section title="About">{data.recent}</Section>
+        <Section title="Highlights">{data.achievements}</Section>
+        <Section title="Audience">{data.audience}</Section>
+        <Section title="Links">{data.links}</Section>
+        {data.contact && (
+          <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${C.line}`, fontSize: 15 }}>
+            <strong>Booking & contact:</strong> {data.contact}
+          </div>
+        )}
+        <div style={{ marginTop: 28, textAlign: "center", color: C.soft, fontSize: 12 }}>
+          Press kit powered by <strong>Anthem</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============================ DASHBOARD ============================ */
 function Dashboard({ auth, onExit, onLogout }) {
   const [tab, setTab] = useState("overview");
@@ -1070,7 +1143,7 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "streams" && <StreamsPanel profile={profile} auth={auth} />}
         {tab === "campaign" && <CampaignPanel auth={auth} profile={profile} onSetup={() => setTab("profile")} />}
         {tab === "tools" && <ToolsPanel auth={auth} profile={profile} saved={saved} setSaved={setSaved} streams={{ months: STREAM_MONTHS, streams: STREAM_VALUES, topTracks: TOP_TRACKS, platforms: PLATFORMS }} />}
-        {tab === "profile" && <ProfilePanel profile={profile} onSave={setProfile} />}
+        {tab === "profile" && <ProfilePanel profile={profile} onSave={setProfile} auth={auth} />}
         {tab === "saved" && <SavedPanel auth={auth} saved={saved} setSaved={setSaved} />}
         {tab === "brain" && <BrainPanel auth={auth} />}
         {tab === "history" && <HistoryPanel auth={auth} onOpenAgent={setTab} />}
@@ -1365,15 +1438,30 @@ function profileToContext(p) {
   if (p.goals) parts.push(`Current goals: ${p.goals}`);
   if (p.audience) parts.push(`Audience: ${p.audience}`);
   if (p.recent) parts.push(`Recent releases/context: ${p.recent}`);
+  if (p.location) parts.push(`Based in: ${p.location}`);
+  if (p.achievements) parts.push(`Notable achievements: ${p.achievements}`);
   if (!parts.length) return "";
   return `\n\nHere is the artist's profile — use it to personalize everything:\n${parts.join("\n")}`;
 }
 
-function ProfilePanel({ profile, onSave }) {
-  const [f, setF] = useState(profile || { name: "", genre: "", stage: "", voice: "", goals: "", audience: "", recent: "", photo: "" });
+function ProfilePanel({ profile, onSave, auth }) {
+  const [f, setF] = useState(profile || { name: "", genre: "", stage: "", voice: "", goals: "", audience: "", recent: "", photo: "", location: "", contact: "", achievements: "", links: "" });
   const [saved, setSaved] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [publishing, setPublishing] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const fileRef = useRef(null);
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setSaved(false); };
+
+  async function publishLink() {
+    if (!f.name) { alert("Add your artist name first."); return; }
+    setPublishing(true);
+    try {
+      const { shareCode } = await api.publishEpk(auth.token, f);
+      setShareUrl(`${window.location.origin}/?epk=${shareCode}`);
+    } catch (e) { alert(e.message || "Couldn't create link."); }
+    finally { setPublishing(false); }
+  }
 
   function onPhoto(e) {
     const file = e.target.files?.[0];
@@ -1392,6 +1480,10 @@ function ProfilePanel({ profile, onSave }) {
     ["goals", "Current goals", "e.g. grow to 25k listeners, land a sync placement"],
     ["audience", "Who's your audience?", "e.g. 18–30, college towns, vinyl buyers"],
     ["recent", "Recent releases / context", "e.g. dropped an EP in March, prepping a single"],
+    ["location", "Based in", "e.g. Austin, TX"],
+    ["achievements", "Notable achievements", "e.g. 500k streams, featured on Spotify Fresh Finds, opened for ___"],
+    ["links", "Links (streaming, socials, website)", "Spotify: ...\nInstagram: ...\nWebsite: ..."],
+    ["contact", "Booking / contact email", "e.g. booking@yourname.com"],
   ];
   return (
     <div className="rise">
@@ -1424,7 +1516,7 @@ function ProfilePanel({ profile, onSave }) {
           {fields.map(([k, label, ph]) => (
             <div key={k}>
               <label style={{ fontSize: 13, fontWeight: 600, color: C.ink, display: "block", marginBottom: 5 }}>{label}</label>
-              {k === "voice" || k === "recent" || k === "goals"
+              {k === "voice" || k === "recent" || k === "goals" || k === "links" || k === "achievements"
                 ? <textarea value={f[k]} onChange={set(k)} placeholder={ph} rows={2} style={{ ...inp, resize: "vertical" }} />
                 : <input value={f[k]} onChange={set(k)} placeholder={ph} style={inp} />}
             </div>
@@ -1435,8 +1527,78 @@ function ProfilePanel({ profile, onSave }) {
           </button>
         </div>
       </div>
+
+      {/* EPK — shareable press kit built from this profile */}
+      <div style={{ ...card, maxWidth: 680, marginTop: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Press kit (EPK)</div>
+        <p style={{ color: C.soft, fontSize: 14, marginTop: 0, lineHeight: 1.5 }}>
+          Turn your profile into a one-page press kit you can send to venues, blogs, and curators.
+          Fill in your details above first, then download it as a PDF.
+        </p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button onClick={() => downloadEPK(f)} style={btn(C.plum)}>
+            <Download size={16} /> Download EPK (PDF)
+          </button>
+          {api.live() && auth?.token && (
+            <button onClick={publishLink} disabled={publishing} style={{ ...btn(C.teal), opacity: publishing ? .6 : 1 }}>
+              <LinkIcon size={16} /> {publishing ? "Creating…" : shareUrl ? "Update share link" : "Get shareable link"}
+            </button>
+          )}
+        </div>
+        {shareUrl && (
+          <div style={{ marginTop: 12, padding: "10px 12px", border: `1px solid ${C.teal}55`, background: `${C.teal}10`,
+            borderRadius: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <a href={shareUrl} target="_blank" rel="noopener" style={{ flex: 1, minWidth: 180, color: C.ink, fontSize: 13, wordBreak: "break-all" }}>{shareUrl}</a>
+            <button onClick={() => { navigator.clipboard?.writeText(shareUrl); setCopiedLink(true); setTimeout(() => setCopiedLink(false), 1500); }}
+              style={{ ...btn(copiedLink ? C.sage : "transparent"), fontSize: 13, padding: "6px 12px" }}>
+              {copiedLink ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
+            </button>
+          </div>
+        )}
+        <p style={{ color: C.soft, fontSize: 12, marginTop: 10 }}>
+          Tip: ask <strong>Remy</strong> to write you a sharp artist bio, then paste it into "Recent releases / context" for a stronger kit.
+        </p>
+      </div>
     </div>
   );
+}
+
+// Build a clean EPK one-pager and open the print dialog (save as PDF).
+function downloadEPK(f) {
+  const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const nl = s => esc(s).replace(/\n/g, "<br>");
+  const linksHtml = f.links ? `<div class="sec"><h3>Links</h3><p>${nl(f.links)}</p></div>` : "";
+  const achHtml = f.achievements ? `<div class="sec"><h3>Highlights</h3><p>${nl(f.achievements)}</p></div>` : "";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(f.name || "EPK")} — Press Kit</title>
+  <style>
+    *{box-sizing:border-box} body{font-family:Georgia,'Times New Roman',serif;color:#1f1a16;margin:0;padding:48px;max-width:760px;margin:0 auto;line-height:1.5}
+    .head{display:flex;gap:24px;align-items:center;border-bottom:3px solid #c2542d;padding-bottom:20px;margin-bottom:22px}
+    .photo{width:120px;height:120px;border-radius:8px;object-fit:cover;flex-shrink:0;background:#eee}
+    h1{font-size:34px;margin:0;color:#1f1a16} .role{color:#c2542d;font-weight:bold;font-size:15px;margin-top:4px}
+    .meta{color:#6b6258;font-size:13px;margin-top:6px}
+    .sec{margin:16px 0} h3{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#c2542d;margin:0 0 4px;border-bottom:1px solid #eee;padding-bottom:3px}
+    p{margin:4px 0} .contact{margin-top:24px;padding-top:16px;border-top:1px solid #eee;font-size:14px}
+    @media print{body{padding:24px}}
+  </style></head><body>
+    <div class="head">
+      ${f.photo ? `<img class="photo" src="${f.photo}">` : ""}
+      <div>
+        <h1>${esc(f.name || "Artist Name")}</h1>
+        ${f.genre ? `<div class="role">${esc(f.genre)}</div>` : ""}
+        <div class="meta">${[f.location, f.stage].filter(Boolean).map(esc).join(" · ")}</div>
+      </div>
+    </div>
+    ${f.recent ? `<div class="sec"><h3>About</h3><p>${nl(f.recent)}</p></div>` : ""}
+    ${achHtml}
+    ${f.audience ? `<div class="sec"><h3>Audience</h3><p>${nl(f.audience)}</p></div>` : ""}
+    ${linksHtml}
+    ${f.contact ? `<div class="contact"><strong>Booking & contact:</strong> ${esc(f.contact)}</div>` : ""}
+  </body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) { alert("Please allow pop-ups to download your EPK."); return; }
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 400);
 }
 
 /* ---- Release Campaign = one brief, fanned out to multiple agents ---- */
