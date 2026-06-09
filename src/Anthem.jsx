@@ -5,7 +5,8 @@ import {
   TrendingUp, Calendar, DollarSign, Activity, Cpu, Copy, Headphones, Mic2,
   MessageCircle, Wallet, UserCircle, Rocket, Loader2, BarChart3, Music, Link2,
   FileText, Link as LinkIcon, ListChecks, PenTool, Inbox, Award, Mail as MailIcon,
-  ListMusic, Wrench, ArrowLeft, Clock, CalendarPlus, Download, X, Brain, Lock
+  ListMusic, Wrench, ArrowLeft, Clock, CalendarPlus, Download, X, Brain, Lock,
+  SlidersHorizontal, Trash2, CalendarDays, Video
 } from "lucide-react";
 
 /* ============================ THEME — clean & indie, warm ============================ */
@@ -273,6 +274,36 @@ const api = {
     const r = await fetch(`${API_BASE}/api/billing/portal`, {
       method: "POST", headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) throw new Error((await r.json()).error || "Could not open billing");
+    return r.json();
+  },
+  async listBookings(token) {
+    const r = await fetch(`${API_BASE}/api/bookings`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load bookings");
+    return r.json();
+  },
+  async addBooking(token, b) {
+    const r = await fetch(`${API_BASE}/api/bookings`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(b) });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not add booking");
+    return r.json();
+  },
+  async deleteBooking(token, id) {
+    const r = await fetch(`${API_BASE}/api/bookings/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not delete");
+    return r.json();
+  },
+  async getSettings(token) {
+    const r = await fetch(`${API_BASE}/api/settings`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load settings");
+    return r.json();
+  },
+  async saveSettings(token, s) {
+    const r = await fetch(`${API_BASE}/api/settings`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(s) });
+    if (!r.ok) throw new Error("Could not save settings");
     return r.json();
   },
 };
@@ -927,8 +958,10 @@ function Dashboard({ auth, onExit, onLogout }) {
     { id: "saved", label: "Saved", icon: Inbox, color: C.clay },
     { id: "history", label: "History", icon: Clock, color: C.teal },
     { id: "team", label: "Team", icon: Users2, color: C.plum },
+    { id: "calendar", label: "Calendar", icon: Clock, color: C.teal },
     { id: "referral", label: "Referrals", icon: Gift },
     { id: "billing", label: "Billing & plan", icon: Wallet, color: C.teal },
+    { id: "settings", label: "Settings", icon: SlidersHorizontal, color: C.soft },
     { id: "features", label: "Request Features", icon: Sparkles, color: C.gold },
     ...(auth?.user?.owner ? [{ id: "admin", label: "Admin", icon: Users2, color: C.rust }] : []),
   ];
@@ -1010,6 +1043,8 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "admin" && auth?.user?.owner && <AdminPanel auth={auth} />}
         {tab === "referral" && <ReferralPanel auth={auth} />}
         {tab === "billing" && <BillingPanel auth={auth} plan={plan} planLabel={planLabel} onUpgrade={() => onExit()} />}
+        {tab === "calendar" && <CalendarPanel auth={auth} />}
+        {tab === "settings" && <SettingsPanel auth={auth} />}
         {AGENTS.map(a => tab === a.id && (
           planAllows(plan, a.id, auth?.user)
             ? <AgentPanel key={a.id} agent={a} auth={auth} profile={profile} setSaved={setSaved} />
@@ -2485,6 +2520,246 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   );
 }
 
+/* ---- Booking calendar (in-app, free) ---- */
+const COMMON_TZ = [
+  "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York",
+  "America/Phoenix", "America/Anchorage", "Pacific/Honolulu",
+  "Europe/London", "Europe/Paris", "Europe/Berlin", "Africa/Lagos",
+  "Asia/Dubai", "Asia/Kolkata", "Asia/Tokyo", "Australia/Sydney", "UTC",
+];
+const DAYS = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"], ["sat", "Sat"], ["sun", "Sun"]];
+
+function pad(n) { return String(n).padStart(2, "0"); }
+function toICSDate(iso) {
+  const d = new Date(iso);
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z`;
+}
+function downloadICS(b) {
+  const start = toICSDate(b.startsAt);
+  const end = toICSDate(b.endsAt || new Date(new Date(b.startsAt).getTime() + 60 * 60 * 1000).toISOString());
+  const desc = [b.notes, b.meetLink ? `Meet: ${b.meetLink}` : ""].filter(Boolean).join("\\n");
+  const ics = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Anthem//EN", "BEGIN:VEVENT",
+    `UID:anthem-${b.id}@varietyvibesradio`, `DTSTAMP:${toICSDate(new Date().toISOString())}`,
+    `DTSTART:${start}`, `DTEND:${end}`, `SUMMARY:${b.title}${b.withWho ? " — " + b.withWho : ""}`,
+    desc ? `DESCRIPTION:${desc}` : "", b.meetLink ? `LOCATION:${b.meetLink}` : "",
+    "END:VEVENT", "END:VCALENDAR",
+  ].filter(Boolean).join("\r\n");
+  const blob = new Blob([ics], { type: "text/calendar" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `${b.title.replace(/[^a-z0-9]/gi, "-")}.ics`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function CalendarPanel({ auth }) {
+  const [bookings, setBookings] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ title: "", withWho: "", date: "", time: "", notes: "", meetLink: "" });
+  const [tz, setTz] = useState("");
+
+  async function load() {
+    if (api.live() && auth?.token) {
+      try { const d = await api.listBookings(auth.token); setBookings(d.bookings || []); } catch {}
+      try { const s = await api.getSettings(auth.token); setTz(s.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone); } catch {}
+    }
+  }
+  useEffect(() => { load(); }, [auth]);
+
+  async function save() {
+    if (!form.title || !form.date || !form.time) { alert("Add a title, date, and time."); return; }
+    const startsAt = new Date(`${form.date}T${form.time}`).toISOString();
+    try {
+      await api.addBooking(auth.token, {
+        title: form.title, withWho: form.withWho, startsAt, notes: form.notes, meetLink: form.meetLink });
+      setForm({ title: "", withWho: "", date: "", time: "", notes: "", meetLink: "" });
+      setAdding(false); load();
+    } catch (e) { alert(e.message); }
+  }
+  async function remove(id) {
+    try { await api.deleteBooking(auth.token, id); load(); } catch (e) { alert(e.message); }
+  }
+
+  const fmt = iso => {
+    try {
+      return new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric",
+        hour: "numeric", minute: "2-digit", timeZone: tz || undefined });
+    } catch { return iso; }
+  };
+  const now = Date.now();
+  const upcoming = bookings.filter(b => new Date(b.startsAt).getTime() >= now - 36e5);
+  const past = bookings.filter(b => new Date(b.startsAt).getTime() < now - 36e5);
+
+  const Row = b => (
+    <div key={b.id} style={{ ...card, padding: "14px 16px", marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700 }}>{b.title}</div>
+          {b.withWho && <div style={{ color: C.soft, fontSize: 13 }}>with {b.withWho}</div>}
+          <div style={{ color: C.teal, fontSize: 13, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <Clock size={13} /> {fmt(b.startsAt)}
+          </div>
+          {b.notes && <div style={{ color: C.soft, fontSize: 13, marginTop: 6 }}>{b.notes}</div>}
+          {b.meetLink && (
+            <a href={b.meetLink} target="_blank" rel="noopener" style={{ display: "inline-flex", alignItems: "center", gap: 5,
+              color: C.plum, fontSize: 13, marginTop: 6, textDecoration: "none" }}>
+              <Video size={13} /> Join Meet
+            </a>
+          )}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <button onClick={() => downloadICS(b)} title="Add to calendar"
+            style={{ ...btn("transparent"), padding: "6px 10px", fontSize: 12 }}>
+            <Download size={13} /> Add to calendar
+          </button>
+          <button onClick={() => remove(b.id)} title="Delete"
+            style={{ background: "none", border: "none", color: C.soft, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 5, justifyContent: "center" }}>
+            <Trash2 size={13} /> Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rise">
+      <PageTitle title="Calendar" sub="Your bookings, sessions, and meetings — all in one place." />
+
+      <div style={{ ...card, marginBottom: 18, padding: "12px 16px", display: "flex", gap: 10,
+        alignItems: "center", fontSize: 13, color: C.soft }}>
+        <Clock size={16} color={C.plum} />
+        <span style={{ flex: 1 }}>Connecting Google Calendar for 2-way sync &amp; auto Meet links is coming soon. For now, add bookings here and tap "Add to calendar" to drop them into any calendar app.</span>
+      </div>
+
+      {!adding ? (
+        <button onClick={() => setAdding(true)} style={{ ...btn(C.rust), marginBottom: 18 }}>
+          <CalendarPlus size={16} /> Add a booking
+        </button>
+      ) : (
+        <div style={{ ...card, marginBottom: 18 }}>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>New booking</div>
+          <div style={{ display: "grid", gap: 10 }}>
+            <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Title (e.g. Studio session)" style={inp} />
+            <input value={form.withWho} onChange={e => setForm({ ...form, withWho: e.target.value })} placeholder="With (optional)" style={inp} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={{ ...inp, flex: 1 }} />
+              <input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} style={{ ...inp, flex: 1 }} />
+            </div>
+            <input value={form.meetLink} onChange={e => setForm({ ...form, meetLink: e.target.value })} placeholder="Google Meet / Zoom link (optional)" style={inp} />
+            <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Notes (optional)" rows={2} style={{ ...inp, resize: "vertical" }} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={save} style={btn(C.rust)}>Save booking</button>
+              <button onClick={() => setAdding(false)} style={btn("transparent")}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <SectionHead kicker="Upcoming" title={`${upcoming.length} booking${upcoming.length === 1 ? "" : "s"}`} />
+      {upcoming.length === 0 ? (
+        <div style={{ ...card, textAlign: "center", color: C.soft, padding: 30 }}>
+          <CalendarDays size={28} color={C.soft} style={{ margin: "0 auto 10px" }} />
+          No upcoming bookings yet. Add one above.
+        </div>
+      ) : upcoming.map(Row)}
+
+      {past.length > 0 && (
+        <>
+          <div style={{ height: 18 }} />
+          <SectionHead kicker="Past" title="Earlier bookings" />
+          <div style={{ opacity: .6 }}>{past.map(Row)}</div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---- Settings: timezone + business hours ---- */
+function SettingsPanel({ auth }) {
+  const [tz, setTz] = useState("");
+  const [hours, setHours] = useState({});
+  const [saved, setSaved] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      if (api.live() && auth?.token) {
+        try {
+          const s = await api.getSettings(auth.token);
+          setTz(s.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+          setHours(s.businessHours || { mon: ["10:00", "18:00"], tue: ["10:00", "18:00"], wed: ["10:00", "18:00"], thu: ["10:00", "18:00"], fri: ["10:00", "18:00"] });
+        } catch {}
+      } else {
+        setTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
+      }
+      setLoaded(true);
+    })();
+  }, [auth]);
+
+  function toggleDay(day) {
+    setHours(h => {
+      const next = { ...h };
+      if (next[day]) delete next[day];
+      else next[day] = ["10:00", "18:00"];
+      return next;
+    });
+  }
+  function setTime(day, idx, val) {
+    setHours(h => ({ ...h, [day]: h[day].map((t, i) => i === idx ? val : t) }));
+  }
+
+  async function save() {
+    try {
+      if (api.live() && auth?.token) await api.saveSettings(auth.token, { timezone: tz, businessHours: hours });
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } catch (e) { alert(e.message); }
+  }
+
+  if (!loaded) return <div className="rise"><PageTitle title="Settings" sub="Your preferences." /></div>;
+
+  return (
+    <div className="rise">
+      <PageTitle title="Settings" sub="Your timezone and availability." />
+
+      <div style={{ ...card, marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Timezone</div>
+        <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>All times across Anthem show in your timezone.</p>
+        <select value={tz} onChange={e => setTz(e.target.value)} style={{ ...inp, maxWidth: 320 }}>
+          {[tz, ...COMMON_TZ.filter(t => t !== tz)].map(t => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
+        </select>
+      </div>
+
+      <div style={{ ...card, marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Business hours</div>
+        <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>Set the days and hours you're open for bookings.</p>
+        <div style={{ display: "grid", gap: 8 }}>
+          {DAYS.map(([key, label]) => (
+            <div key={key} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, width: 90, cursor: "pointer" }}>
+                <input type="checkbox" checked={!!hours[key]} onChange={() => toggleDay(key)}
+                  style={{ width: 16, height: 16, accentColor: C.rust }} />
+                <span style={{ fontSize: 14 }}>{label}</span>
+              </label>
+              {hours[key] ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="time" value={hours[key][0]} onChange={e => setTime(key, 0, e.target.value)} style={{ ...inp, padding: "6px 8px", width: "auto" }} />
+                  <span style={{ color: C.soft }}>to</span>
+                  <input type="time" value={hours[key][1]} onChange={e => setTime(key, 1, e.target.value)} style={{ ...inp, padding: "6px 8px", width: "auto" }} />
+                </div>
+              ) : <span style={{ color: C.soft, fontSize: 13 }}>Closed</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={save} style={btn(saved ? C.sage : C.rust)}>
+        {saved ? <><Check size={16} /> Saved</> : "Save settings"}
+      </button>
+    </div>
+  );
+}
+
 /* ---- Billing & plan: manage subscription, cancel ---- */
 function BillingPanel({ auth, plan, planLabel, onUpgrade }) {
   const [busy, setBusy] = useState(false);
@@ -2650,6 +2925,7 @@ const COMING_SOON = [
   { title: "Video editing", desc: "Turn your tracks into ready-to-post video clips and visualizers — right inside Anthem.", icon: Music2, color: C.rust, tag: "Planned" },
   { title: "Beat making", desc: "Generate and customize beats and instrumentals to spark your next track.", icon: Music, color: C.plum, tag: "Planned" },
   { title: "Scheduled posts", desc: "Queue content and have it go out at the best times automatically.", icon: Clock, color: C.rust, tag: "Planned" },
+  { title: "Connect Google Calendar", desc: "2-way calendar sync with auto-created Google Meet links for every booking.", icon: CalendarDays, color: C.teal, tag: "Planned" },
   { title: "Call agent", desc: "An AI voice agent that answers calls, books gigs, and handles fan & venue inquiries by phone.", icon: MessageCircle, color: C.teal, tag: "Planned" },
   { title: "Voice chat with agents", desc: "Talk to your team out loud instead of typing.", icon: Mic2, color: C.gold, tag: "Exploring" },
   { title: "Mobile app", desc: "Anthem in your pocket — iOS & Android.", icon: Music2, color: C.clay, tag: "Exploring" },
