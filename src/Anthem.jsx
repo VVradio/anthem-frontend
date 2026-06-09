@@ -3764,6 +3764,10 @@ const COMING_SOON = [
   { title: "Call agent", desc: "An AI voice agent that answers calls, books gigs, and handles fan & venue inquiries by phone.", icon: MessageCircle, color: C.teal, tag: "Planned" },
   { title: "Voice chat with agents", desc: "Talk to your team out loud instead of typing.", icon: Mic2, color: C.gold, tag: "Exploring" },
   { title: "Mobile app", desc: "Anthem in your pocket — iOS & Android.", icon: Music2, color: C.clay, tag: "Exploring" },
+  { title: "Merch store", desc: "Sell shirts, vinyl, and digital goods to your fans right from Anthem.", icon: Inbox, color: C.rust, tag: "Exploring" },
+  { title: "Tour routing map", desc: "Plan smart tour routes and find venues along the way.", icon: MapPin, color: C.teal, tag: "Exploring" },
+  { title: "Sync licensing marketplace", desc: "Pitch your music for film, TV, ads, and games — and get placed.", icon: Music, color: C.plum, tag: "Exploring" },
+  { title: "AI mastering", desc: "Master your tracks to streaming-ready loudness in one click.", icon: Sparkles, color: C.gold, tag: "Exploring" },
 ];
 
 function FeaturesPanel({ auth }) {
