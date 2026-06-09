@@ -2092,7 +2092,7 @@ const WORK_TABS = {
 const AGENT_SYSTEMS = {
   anr: "You are Nora, an AI A&R and music career strategist. Advise artists on release strategy, audience growth, positioning, and honest creative direction. Be specific and practical. Be concise.",
   social: "You are Mia, an AI social media and fan-engagement manager for musicians. Plan release content, write captions in the artist's voice, and grow fan loyalty. Be punchy and concise.",
-  booking: "You are Theo, an AI booking and gig-outreach agent. Find suitable venues/promoters, draft booking pitches, and help route tours sensibly. Be concise and practical.",
+  booking: "You are Theo, an AI booking and gig-outreach agent. Find suitable venues/promoters, draft booking pitches, and help route tours sensibly. Be concise and practical. IMPORTANT: Whenever a specific booking, gig, show, or meeting gets confirmed or scheduled with a clear date (and ideally a time), end your message with a single hidden tag on its own line in EXACTLY this format: [[BOOKING]]{\"title\":\"...\",\"withWho\":\"...\",\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM\",\"notes\":\"...\"}[[/BOOKING]] — use 24-hour time, omit time if unknown, and only include this tag when there is a real date to add. Do not mention the tag to the user.",
   legal: "You are Sol, an AI assistant for music royalties and contracts. Explain splits, royalties, and contract terms in plain language and flag risk. Always note you are not a substitute for a licensed music attorney. Be concise.",
   blog: "You are Remy, an AI writer for musicians. Draft press releases, artist bios, EPK copy, and playlist pitches in the artist's voice. Be polished and concise.",
   chat: "You are Cleo, a friendly 24/7 website chat widget for a musician or band. Answer fan questions (tour dates, releases, merch), handle venue and booking inquiries, capture contact info for leads, and escalate hot inquiries to the artist. Be warm, upbeat, and concise.",
@@ -2229,6 +2229,45 @@ function AgentWorkTab({ agent, auth, setSaved }) {
           <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.55, color: C.ink, maxHeight: 200, overflow: "auto" }}>{it.text}</div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Chip shown under a Theo message when he's confirmed a booking — one tap to save it.
+function AddToCalendarChip({ booking, auth }) {
+  const [added, setAdded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const niceDate = (() => {
+    try {
+      const dt = new Date(`${booking.date}T${booking.time || "12:00"}`);
+      return dt.toLocaleString([], { weekday: "short", month: "short", day: "numeric",
+        ...(booking.time ? { hour: "numeric", minute: "2-digit" } : {}) });
+    } catch { return booking.date; }
+  })();
+  async function add() {
+    if (busy || added) return;
+    setBusy(true);
+    try {
+      const startsAt = new Date(`${booking.date}T${booking.time || "12:00"}`).toISOString();
+      const payload = { title: booking.title || "Booking", withWho: booking.withWho || "",
+        startsAt, notes: booking.notes || "" };
+      if (api.live() && auth?.token) await api.addBooking(auth.token, payload);
+      setAdded(true);
+    } catch (e) { alert(e.message || "Couldn't add to calendar."); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div style={{ marginTop: 8, padding: "10px 12px", border: `1px solid ${C.teal}55`,
+      background: `${C.teal}12`, borderRadius: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <CalendarPlus size={16} color={C.teal} />
+      <div style={{ flex: 1, minWidth: 160, fontSize: 13 }}>
+        <div style={{ fontWeight: 700 }}>{booking.title || "Booking"}</div>
+        <div style={{ color: C.soft }}>{niceDate}{booking.withWho ? ` · ${booking.withWho}` : ""}</div>
+      </div>
+      <button onClick={add} disabled={busy || added}
+        style={{ ...btn(added ? C.sage : C.teal), fontSize: 13, padding: "8px 14px", opacity: busy ? .6 : 1 }}>
+        {added ? <><Check size={15} /> Added to calendar</> : busy ? "Adding…" : <><CalendarPlus size={15} /> Add to calendar</>}
+      </button>
     </div>
   );
 }
@@ -2443,7 +2482,17 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
       {view === "chat" && <>
 
       <div className="scroll" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 6 }}>
-        {msgs.map((m, i) => (
+        {msgs.map((m, i) => {
+          // Detect a booking suggestion Theo embedded (and hide the raw tag).
+          let booking = null, displayText = m.text;
+          if (m.role !== "user" && typeof m.text === "string" && m.text.includes("[[BOOKING]]")) {
+            const match = m.text.match(/\[\[BOOKING\]\]([\s\S]*?)\[\[\/BOOKING\]\]/);
+            if (match) {
+              try { booking = JSON.parse(match[1].trim()); } catch {}
+              displayText = m.text.replace(/\[\[BOOKING\]\][\s\S]*?\[\[\/BOOKING\]\]/, "").trim();
+            }
+          }
+          return (
           <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "78%" }}>
             <div style={{
               background: m.role === "user" ? agent.color : C.card,
@@ -2453,8 +2502,9 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
               borderTopLeftRadius: m.role === "user" ? 14 : 4,
               fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap",
               border: m.role === "user" ? "none" : `1px solid ${C.line}` }}>
-              {m.text}
+              {displayText}
             </div>
+            {booking && booking.date && <AddToCalendarChip booking={booking} auth={auth} />}
             {m.svg && (
               <div style={{ marginTop: 8, borderRadius: 14, overflow: "hidden", border: `1px solid ${C.line}`,
                 width: 280, height: 280, background: "#fff" }}
@@ -2484,11 +2534,11 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
             {/* Copy + save + schedule actions on assistant text replies */}
             {m.role !== "user" && m.text && i !== 0 && (
               <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <CopyButton text={m.text} color={agent.color} />
+                <CopyButton text={displayText} color={agent.color} />
                 <button onClick={() => {
-                    const item = { id: Date.now(), tool: agent.name, text: m.text, when: new Date().toLocaleString() };
+                    const item = { id: Date.now(), tool: agent.name, text: displayText, when: new Date().toLocaleString() };
                     setSaved?.(list => [item, ...(list || [])]);
-                    if (api.live() && auth?.token) api.addSaved(auth.token, agent.name, m.text).catch(() => {});
+                    if (api.live() && auth?.token) api.addSaved(auth.token, agent.name, displayText).catch(() => {});
                   }}
                   style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
                   <Inbox size={15} /> Save
@@ -2500,7 +2550,8 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
         {busy && <div style={{ color: C.soft, fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
           <Mic2 size={15} color={agent.color} /> {agent.name} is {agent.id === "image" ? "creating" : "thinking"}…</div>}
         <div ref={endRef} />
