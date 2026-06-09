@@ -333,6 +333,42 @@ const api = {
     if (!r.ok) throw new Error("Not found");
     return r.json(); // { data }
   },
+  async listReleases(token) {
+    const r = await fetch(`${API_BASE}/api/royalties`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load");
+    return r.json();
+  },
+  async addRelease(token, rel) {
+    const r = await fetch(`${API_BASE}/api/royalties`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(rel) });
+    if (!r.ok) throw new Error("Could not add");
+    return r.json();
+  },
+  async updateRelease(token, id, patch) {
+    const r = await fetch(`${API_BASE}/api/royalties/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(patch) });
+    if (!r.ok) throw new Error("Could not update");
+    return r.json();
+  },
+  async deleteRelease(token, id) {
+    const r = await fetch(`${API_BASE}/api/royalties/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not delete");
+    return r.json();
+  },
+  async shareRelease(token, id) {
+    const r = await fetch(`${API_BASE}/api/royalties/${id}/share`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not share");
+    return r.json();
+  },
+  async getSplitSheet(code) {
+    const r = await fetch(`${API_BASE}/api/royalties/sheet/${code}`);
+    if (!r.ok) throw new Error("Not found");
+    return r.json();
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -462,6 +498,7 @@ export default function App() {
   const [pendingPlan, setPendingPlan] = useState(null); // { plan, cycle } chosen before login
   const [resetToken, setResetToken] = useState(null);
   const [epkCode, setEpkCode] = useState(null);
+  const [splitCode, setSplitCode] = useState(null);
 
   // Restore a remembered session on load (if the user chose "Remember me").
   useEffect(() => {
@@ -489,6 +526,11 @@ export default function App() {
     try {
       const em = /[?&]epk=([^&]+)/.exec(window.location.search);
       if (em && em[1]) { setEpkCode(decodeURIComponent(em[1])); setView("epk"); }
+    } catch {}
+    // If they opened a shared split sheet (?split=CODE), show it.
+    try {
+      const sm = /[?&]split=([^&]+)/.exec(window.location.search);
+      if (sm && sm[1]) { setSplitCode(decodeURIComponent(sm[1])); setView("split"); }
     } catch {}
   }, []);
 
@@ -555,6 +597,7 @@ export default function App() {
       {view === "login" && <Login onAuthed={afterLogin} onBack={() => setView("landing")} />}
       {view === "reset" && <ResetPassword token={resetToken} onDone={() => { setResetToken(null); setView("login"); }} />}
       {view === "epk" && <PublicEPK code={epkCode} />}
+      {view === "split" && <PublicSplitSheet code={splitCode} />}
       {view === "dashboard" && <Dashboard auth={auth} onExit={() => setView("landing")} onLogout={logout} />}
     </div>
   );
@@ -1021,6 +1064,50 @@ function PublicEPK({ code }) {
   );
 }
 
+/* ============================ PUBLIC SPLIT SHEET ============================ */
+function PublicSplitSheet({ code }) {
+  const [rel, setRel] = useState(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => { api.getSplitSheet(code).then(setRel).catch(() => setErr(true)); }, [code]);
+
+  if (err) return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20, textAlign: "center" }}>
+      <div><div style={{ fontFamily: FONT_DISPLAY, fontSize: 24 }}>Split sheet not found</div>
+        <p style={{ color: C.soft }}>This link may be incorrect or no longer available.</p></div>
+    </div>
+  );
+  if (!rel) return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}><Loader2 className="spin" /></div>;
+
+  const rev = (rel.revenueCents || 0) / 100;
+  return (
+    <div style={{ minHeight: "100vh", background: C.cream, padding: "40px 20px" }}>
+      <div style={{ maxWidth: 680, margin: "0 auto", background: C.card, borderRadius: 16,
+        border: `1px solid ${C.line}`, padding: 36, boxShadow: "0 20px 50px -20px rgba(31,26,22,.25)" }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, borderBottom: `3px solid ${C.rust}`, paddingBottom: 12 }}>
+          {rel.title} — Split Sheet
+        </div>
+        {rel.revenueCents > 0 && <div style={{ marginTop: 12, fontSize: 15 }}>Revenue logged: <strong>${rev.toFixed(2)}</strong></div>}
+        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 16, fontSize: 15 }}>
+          <thead><tr style={{ color: C.rust, textAlign: "left", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>
+            <th style={{ padding: 10 }}>Name</th><th style={{ padding: 10 }}>Role</th>
+            <th style={{ padding: 10, textAlign: "right" }}>Split</th><th style={{ padding: 10, textAlign: "right" }}>Amount</th>
+          </tr></thead>
+          <tbody>{(rel.splits || []).map((s, i) => (
+            <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
+              <td style={{ padding: 10 }}>{s.name}</td><td style={{ padding: 10 }}>{s.role}</td>
+              <td style={{ padding: 10, textAlign: "right" }}>{s.pct}%</td>
+              <td style={{ padding: 10, textAlign: "right", color: C.sage, fontWeight: 600 }}>${(rev * ((Number(s.pct) || 0) / 100)).toFixed(2)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+        <div style={{ marginTop: 28, textAlign: "center", color: C.soft, fontSize: 12 }}>
+          A record of agreed splits, generated with <strong>Anthem</strong>. Not a legal contract.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============================ DASHBOARD ============================ */
 function Dashboard({ auth, onExit, onLogout }) {
   const [tab, setTab] = useState("overview");
@@ -1064,6 +1151,7 @@ function Dashboard({ auth, onExit, onLogout }) {
     { id: "team", label: "Team", icon: Users2, color: C.plum },
     { id: "calendar", label: "Calendar", icon: Clock, color: C.teal },
     { id: "distribution", label: "Distribution", icon: Rocket, color: C.rust },
+    { id: "royalties", label: "Royalties & Splits", icon: DollarSign, color: C.sage },
     { id: "referral", label: "Referrals", icon: Gift },
     { id: "billing", label: "Billing & plan", icon: Wallet, color: C.teal },
     { id: "settings", label: "Settings", icon: SlidersHorizontal, color: C.soft },
@@ -1154,6 +1242,7 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "billing" && <BillingPanel auth={auth} plan={plan} planLabel={planLabel} onUpgrade={() => onExit()} />}
         {tab === "calendar" && <CalendarPanel auth={auth} />}
         {tab === "distribution" && <DistributionPanel profile={profile} />}
+        {tab === "royalties" && <RoyaltiesPanel auth={auth} />}
         {tab === "settings" && <SettingsPanel auth={auth} />}
         {AGENTS.map(a => tab === a.id && (
           planAllows(plan, a.id, auth?.user)
@@ -2759,6 +2848,178 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
         </button>
       </div>
       </>}
+    </div>
+  );
+}
+
+/* ---- Royalties & splits tracker ---- */
+function splitSheetHTML(rel) {
+  const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const rev = (rel.revenueCents || 0) / 100;
+  const rows = (rel.splits || []).map(s => {
+    const cut = rev * ((Number(s.pct) || 0) / 100);
+    return `<tr><td>${esc(s.name)}</td><td>${esc(s.role || "")}</td><td style="text-align:right">${s.pct}%</td><td style="text-align:right">$${cut.toFixed(2)}</td></tr>`;
+  }).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(rel.title)} — Split Sheet</title>
+  <style>body{font-family:Georgia,serif;color:#1f1a16;max-width:680px;margin:0 auto;padding:48px;line-height:1.5}
+  h1{border-bottom:3px solid #c2542d;padding-bottom:12px} table{width:100%;border-collapse:collapse;margin-top:16px}
+  th,td{padding:10px;border-bottom:1px solid #eee;text-align:left} th{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#c2542d}
+  .total{margin-top:18px;font-weight:bold} .sig{margin-top:40px;display:flex;gap:30px;flex-wrap:wrap}
+  .sig div{flex:1;min-width:200px;border-top:1px solid #1f1a16;padding-top:6px;font-size:13px;color:#6b6258}
+  @media print{body{padding:24px}}</style></head><body>
+  <h1>${esc(rel.title)} — Split Sheet</h1>
+  ${rel.revenueCents ? `<div>Revenue logged: <strong>$${rev.toFixed(2)}</strong></div>` : ""}
+  <table><thead><tr><th>Name</th><th>Role</th><th style="text-align:right">Split</th><th style="text-align:right">Amount</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <div class="sig">${(rel.splits || []).map(s => `<div>${esc(s.name)} — signature & date</div>`).join("")}</div>
+  <p style="margin-top:30px;color:#999;font-size:12px">Generated with Anthem. This is a record of agreed splits, not a legal contract.</p>
+  </body></html>`;
+}
+function printSplitSheet(rel) {
+  const w = window.open("", "_blank");
+  if (!w) { alert("Please allow pop-ups to print the split sheet."); return; }
+  w.document.write(splitSheetHTML(rel)); w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 400);
+}
+
+function RoyaltiesPanel({ auth }) {
+  const [releases, setReleases] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
+
+  async function load() {
+    if (api.live() && auth?.token) {
+      try { const d = await api.listReleases(auth.token); setReleases(d.releases || []); } catch {}
+    }
+  }
+  useEffect(() => { load(); }, [auth]);
+
+  async function addRelease() {
+    if (!title.trim()) return;
+    try {
+      await api.addRelease(auth.token, { title: title.trim(), splits: [{ name: "", role: "Artist", pct: 100 }], revenueCents: 0 });
+      setTitle(""); setAdding(false); load();
+    } catch (e) { alert(e.message); }
+  }
+
+  return (
+    <div className="rise">
+      <PageTitle title="Royalties & Splits" sub="Track who owns what on each release, and who's owed what." />
+
+      <div style={{ ...card, marginBottom: 18, padding: "12px 16px", display: "flex", gap: 10, alignItems: "center", fontSize: 13, color: C.soft }}>
+        <DollarSign size={16} color={C.sage} />
+        <span style={{ flex: 1 }}>Log each release's collaborator splits and any revenue you receive — Anthem calculates everyone's cut. Ask <strong>June</strong> for guidance on royalties and taxes.</span>
+      </div>
+
+      {!adding ? (
+        <button onClick={() => setAdding(true)} style={{ ...btn(C.rust), marginBottom: 18 }}>
+          <PenLine size={16} /> Add a release
+        </button>
+      ) : (
+        <div style={{ ...card, marginBottom: 18, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Release / song title" style={{ ...inp, flex: 1, minWidth: 200 }} onKeyDown={e => e.key === "Enter" && addRelease()} />
+          <button onClick={addRelease} style={btn(C.rust)}>Add</button>
+          <button onClick={() => setAdding(false)} style={btn("transparent")}>Cancel</button>
+        </div>
+      )}
+
+      {releases.length === 0 ? (
+        <div style={{ ...card, textAlign: "center", color: C.soft, padding: 30 }}>
+          <DollarSign size={28} color={C.soft} style={{ margin: "0 auto 10px" }} />
+          No releases yet. Add one to start tracking splits.
+        </div>
+      ) : releases.map(rel => <ReleaseCard key={rel.id} rel={rel} auth={auth} onChange={load} />)}
+    </div>
+  );
+}
+
+function ReleaseCard({ rel, auth, onChange }) {
+  const [splits, setSplits] = useState(rel.splits?.length ? rel.splits : [{ name: "", role: "Artist", pct: 100 }]);
+  const [revenue, setRevenue] = useState(((rel.revenueCents || 0) / 100) || "");
+  const [dirty, setDirty] = useState(false);
+  const [shareUrl, setShareUrl] = useState(rel.shareCode ? `${window.location.origin}/?split=${rel.shareCode}` : "");
+
+  const total = splits.reduce((s, x) => s + (Number(x.pct) || 0), 0);
+  const rev = Number(revenue) || 0;
+  const valid = total === 100;
+
+  function setSplit(i, k, v) { setSplits(s => s.map((x, j) => j === i ? { ...x, [k]: v } : x)); setDirty(true); }
+  function addRow() { setSplits(s => [...s, { name: "", role: "", pct: 0 }]); setDirty(true); }
+  function removeRow(i) { setSplits(s => s.filter((_, j) => j !== i)); setDirty(true); }
+
+  async function save() {
+    try {
+      await api.updateRelease(auth.token, rel.id, {
+        splits: splits.map(s => ({ name: s.name, role: s.role, pct: Number(s.pct) || 0 })),
+        revenueCents: Math.round(rev * 100),
+      });
+      setDirty(false); onChange?.();
+    } catch (e) { alert(e.message); }
+  }
+  async function del() {
+    if (!confirm(`Delete "${rel.title}"?`)) return;
+    try { await api.deleteRelease(auth.token, rel.id); onChange?.(); } catch (e) { alert(e.message); }
+  }
+  async function share() {
+    try {
+      const { shareCode } = await api.shareRelease(auth.token, rel.id);
+      const url = `${window.location.origin}/?split=${shareCode}`;
+      setShareUrl(url); navigator.clipboard?.writeText(url);
+      alert("Split sheet link copied to clipboard!");
+    } catch (e) { alert(e.message); }
+  }
+
+  return (
+    <div style={{ ...card, marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 600 }}>{rel.title}</div>
+        <button onClick={del} style={{ background: "none", border: "none", color: C.soft, cursor: "pointer", display: "flex", gap: 5, alignItems: "center", fontSize: 13 }}>
+          <Trash2 size={14} /> Delete
+        </button>
+      </div>
+
+      {/* Revenue */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", margin: "12px 0", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13, color: C.soft }}>Revenue received $</span>
+        <input type="number" value={revenue} onChange={e => { setRevenue(e.target.value); setDirty(true); }}
+          placeholder="0.00" style={{ ...inp, width: 120, padding: "6px 10px" }} />
+      </div>
+
+      {/* Splits table */}
+      <div style={{ display: "grid", gap: 8 }}>
+        {splits.map((s, i) => {
+          const cut = rev * ((Number(s.pct) || 0) / 100);
+          return (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input value={s.name} onChange={e => setSplit(i, "name", e.target.value)} placeholder="Name" style={{ ...inp, flex: 2, minWidth: 120, padding: "7px 10px" }} />
+              <input value={s.role} onChange={e => setSplit(i, "role", e.target.value)} placeholder="Role" style={{ ...inp, flex: 1, minWidth: 90, padding: "7px 10px" }} />
+              <input type="number" value={s.pct} onChange={e => setSplit(i, "pct", e.target.value)} placeholder="%" style={{ ...inp, width: 70, padding: "7px 10px" }} />
+              <span style={{ width: 80, textAlign: "right", fontSize: 13, color: C.sage, fontWeight: 600 }}>${cut.toFixed(2)}</span>
+              <button onClick={() => removeRow(i)} style={{ background: "none", border: "none", color: C.soft, cursor: "pointer" }}><X size={15} /></button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
+        <button onClick={addRow} style={{ ...btn("transparent"), fontSize: 13, padding: "6px 12px" }}>+ Add collaborator</button>
+        <div style={{ fontSize: 13, fontWeight: 700, color: valid ? C.sage : C.rust }}>
+          Total: {total}% {valid ? "✓" : "(must equal 100%)"}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+        <button onClick={save} disabled={!dirty} style={{ ...btn(dirty ? C.rust : "transparent"), opacity: dirty ? 1 : .5 }}>
+          {dirty ? "Save" : "Saved"}
+        </button>
+        <button onClick={() => printSplitSheet({ ...rel, splits, revenueCents: Math.round(rev * 100) })} style={btn("transparent")}>
+          <Download size={15} /> Print split sheet
+        </button>
+        <button onClick={share} style={btn(C.teal)}>
+          <LinkIcon size={15} /> Share with collaborators
+        </button>
+      </div>
+      {shareUrl && <div style={{ marginTop: 8, fontSize: 12, color: C.soft, wordBreak: "break-all" }}>Shareable: {shareUrl}</div>}
     </div>
   );
 }
