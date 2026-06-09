@@ -9,6 +9,21 @@ import {
   SlidersHorizontal, Trash2, CalendarDays, Video
 } from "lucide-react";
 
+// Agent portrait images (bundled). Drop these files into src/assets/agents/.
+// If a file is missing, the UI falls back to the agent's icon.
+import imgNora from "./assets/agents/nora.webp";
+import imgMia from "./assets/agents/mia.webp";
+import imgTheo from "./assets/agents/theo.webp";
+import imgSol from "./assets/agents/sol.webp";
+import imgIris from "./assets/agents/iris.webp";
+import imgRemy from "./assets/agents/remy.webp";
+import imgCleo from "./assets/agents/cleo.webp";
+import imgJune from "./assets/agents/june.webp";
+const AGENT_IMG = {
+  anr: imgNora, social: imgMia, booking: imgTheo, legal: imgSol,
+  image: imgIris, blog: imgRemy, chat: imgCleo, finance: imgJune,
+};
+
 /* ============================ THEME — clean & indie, warm ============================ */
 const C = {
   paper: "#faf6f0", cream: "#fffdf9", card: "#ffffff",
@@ -353,7 +368,26 @@ const AGENTS = [
     sample: "Let's make your money make sense. I can budget a tour, break down where your streaming income comes from, or explain what to set aside for taxes. Heads up: I'm a financial literacy coach, not a licensed advisor — take big decisions to a real accountant. What are we looking at?" },
 ];
 
-// Platforms artists can post to (all handled by Ayrshare through one API).
+// Round agent portrait with graceful fallback to the lucide icon.
+function AgentAvatar({ agent, size = 40, radius }) {
+  const [failed, setFailed] = useState(false);
+  const src = AGENT_IMG[agent.id];
+  const r = radius != null ? radius : Math.round(size / 4);
+  if (src && !failed) {
+    return (
+      <img src={src} alt={agent.name} onError={() => setFailed(true)}
+        style={{ width: size, height: size, borderRadius: r, objectFit: "cover",
+          border: `1px solid ${agent.color}55`, display: "block" }} />
+    );
+  }
+  const Icon = agent.icon;
+  return (
+    <div style={{ width: size, height: size, borderRadius: r, background: `${agent.color}1a`,
+      border: `1px solid ${agent.color}40`, display: "grid", placeItems: "center" }}>
+      <Icon size={Math.round(size * 0.5)} color={agent.color} />
+    </div>
+  );
+}
 const SOCIAL_PLATFORMS = [
   { id: "instagram", label: "Instagram" },
   { id: "facebook", label: "Facebook" },
@@ -639,10 +673,7 @@ function Landing({ onLaunch, onCheckout }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 16 }}>
           {AGENTS.map((a, i) => (
             <div key={a.id} className="lift" style={{ ...card, animationDelay: `${i * 60}ms` }}>
-              <div style={{ width: 46, height: 46, borderRadius: 12, display: "grid", placeItems: "center",
-                background: `${a.color}18`, border: `1px solid ${a.color}40` }}>
-                <a.icon size={22} color={a.color} />
-              </div>
+              <AgentAvatar agent={a} size={46} radius={12} />
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginTop: 14, fontWeight: 600 }}>{a.name}</div>
               <div style={{ color: a.color, fontSize: 12, fontWeight: 600, letterSpacing: .4, textTransform: "uppercase" }}>{a.role}</div>
               <p style={{ color: C.soft, fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>{a.blurb}</p>
@@ -974,6 +1005,7 @@ function Dashboard({ auth, onExit, onLogout }) {
         <div style={{ padding: "0 6px 18px" }}><Logo /></div>
         {nav.map(n => {
           const active = tab === n.id;
+          const agentForNav = AGENTS.find(a => a.id === n.id);
           return (
             <button key={n.id} onClick={() => setTab(n.id)} style={{
               display: "flex", gap: 11, alignItems: "center", width: "100%", textAlign: "left",
@@ -982,7 +1014,9 @@ function Dashboard({ auth, onExit, onLogout }) {
               background: active ? C.paper : "transparent",
               color: active ? C.ink : C.soft,
               borderLeft: `3px solid ${active ? (n.color || C.rust) : "transparent"}`, fontWeight: active ? 600 : 400 }}>
-              <n.icon size={18} color={active ? (n.color || C.rust) : C.soft} />
+              {agentForNav
+                ? <AgentAvatar agent={agentForNav} size={22} radius={6} />
+                : <n.icon size={18} color={active ? (n.color || C.rust) : C.soft} />}
               <span style={{ flex: 1 }}>{n.label}</span>
               {AGENTS.some(a => a.id === n.id) && !planAllows(plan, n.id, auth?.user) &&
                 <Lock size={13} color={C.soft} />}
@@ -2076,9 +2110,8 @@ function LockedAgent({ agent, plan, user, onUpgrade }) {
   return (
     <div className="rise" style={{ display: "grid", placeItems: "center", minHeight: "60vh" }}>
       <div style={{ ...card, maxWidth: 420, textAlign: "center", padding: 40 }}>
-        <div style={{ width: 64, height: 64, borderRadius: 16, margin: "0 auto 16px", background: `${agent.color}18`,
-          border: `1px solid ${agent.color}40`, display: "grid", placeItems: "center", position: "relative" }}>
-          <agent.icon size={30} color={agent.color} />
+        <div style={{ width: 64, height: 64, margin: "0 auto 16px", position: "relative", display: "inline-block" }}>
+          <AgentAvatar agent={agent} size={64} radius={16} />
           <div style={{ position: "absolute", bottom: -6, right: -6, width: 26, height: 26, borderRadius: "50%",
             background: C.ink, display: "grid", placeItems: "center" }}>
             <Lock size={13} color="#fff" />
@@ -2361,10 +2394,7 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   return (
     <div className="rise" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 52px)" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
-        <div style={{ width: 44, height: 44, borderRadius: 11, background: `${agent.color}18`,
-          border: `1px solid ${agent.color}40`, display: "grid", placeItems: "center" }}>
-          <agent.icon size={22} color={agent.color} />
-        </div>
+        <AgentAvatar agent={agent} size={44} radius={11} />
         <div>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 23, fontWeight: 600 }}>{agent.name}</div>
           <div style={{ color: agent.color, fontSize: 12, textTransform: "uppercase", letterSpacing: .4 }}>{agent.role}</div>
