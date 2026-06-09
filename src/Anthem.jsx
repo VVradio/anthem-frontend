@@ -990,6 +990,7 @@ function Dashboard({ auth, onExit, onLogout }) {
     { id: "history", label: "History", icon: Clock, color: C.teal },
     { id: "team", label: "Team", icon: Users2, color: C.plum },
     { id: "calendar", label: "Calendar", icon: Clock, color: C.teal },
+    { id: "distribution", label: "Distribution", icon: Rocket, color: C.rust },
     { id: "referral", label: "Referrals", icon: Gift },
     { id: "billing", label: "Billing & plan", icon: Wallet, color: C.teal },
     { id: "settings", label: "Settings", icon: SlidersHorizontal, color: C.soft },
@@ -1079,6 +1080,7 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "referral" && <ReferralPanel auth={auth} />}
         {tab === "billing" && <BillingPanel auth={auth} plan={plan} planLabel={planLabel} onUpgrade={() => onExit()} />}
         {tab === "calendar" && <CalendarPanel auth={auth} />}
+        {tab === "distribution" && <DistributionPanel profile={profile} />}
         {tab === "settings" && <SettingsPanel auth={auth} />}
         {AGENTS.map(a => tab === a.id && (
           planAllows(plan, a.id, auth?.user)
@@ -1589,10 +1591,7 @@ function Overview({ onJump, profile }) {
           <button key={a.id} onClick={() => onJump(a.id)} className="lift"
             style={{ ...card, cursor: "pointer", textAlign: "left" }}>
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: `${a.color}18`,
-                border: `1px solid ${a.color}40`, display: "grid", placeItems: "center" }}>
-                <a.icon size={20} color={a.color} />
-              </div>
+              <AgentAvatar agent={a} size={40} radius={10} />
               <div>
                 <div style={{ fontWeight: 700 }}>{a.name}</div>
                 <div style={{ color: a.color, fontSize: 11, textTransform: "uppercase", letterSpacing: .4 }}>{a.role}</div>
@@ -2602,6 +2601,83 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   );
 }
 
+/* ---- Distribution guidance (get music on streaming platforms) ---- */
+const DISTRIBUTORS = [
+  { name: "DistroKid", best: "Unlimited releases, fast", price: "~$23/yr flat", note: "Keep 100% royalties. Great for frequent releasers.", url: "https://distrokid.com" },
+  { name: "TuneCore", best: "Detailed reporting", price: "Per-release or yearly", note: "Strong analytics and publishing admin add-ons.", url: "https://www.tunecore.com" },
+  { name: "CD Baby", best: "One-time fee per release", price: "~$10–30 once", note: "Pay once, distribute forever for that release.", url: "https://cdbaby.com" },
+  { name: "Amuse", best: "Free tier", price: "Free / Pro", note: "A solid free option to get started with no cost.", url: "https://www.amuse.io" },
+  { name: "Symphonic", best: "Growing artists/labels", price: "Revenue share", note: "More hands-on, good for catalog and labels.", url: "https://symphonic.com" },
+];
+const RELEASE_STEPS = [
+  ["Finish & master your track", "Make sure your audio is mixed and mastered to streaming loudness. Have the final WAV ready."],
+  ["Prepare cover art", "3000×3000px square, no logos/URLs/blurriness. Iris can generate this for you."],
+  ["Pick a distributor", "Choose one below based on budget and how often you release."],
+  ["Set a release date", "Pick a date 3–4 weeks out so you can pitch to playlists and build hype."],
+  ["Pitch to Spotify editorial", "In Spotify for Artists, submit your unreleased track at least 7 days early."],
+  ["Line up your rollout", "Use the Release Campaign tool — Nora, Mia, Remy and Iris plan the whole launch."],
+  ["Release & promote", "On drop day, share everywhere. Mia can prep your posts and captions."],
+];
+
+function DistributionPanel({ profile }) {
+  return (
+    <div className="rise">
+      <PageTitle title="Distribution" sub="Get your music onto Spotify, Apple Music, and everywhere else." />
+
+      <div style={{ ...card, marginBottom: 22 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>How it works</div>
+        <p style={{ color: C.soft, fontSize: 14, lineHeight: 1.6, marginTop: 0 }}>
+          Streaming platforms don't let you upload music directly — you go through a <strong>distributor</strong> that
+          delivers your track to Spotify, Apple Music, TikTok, YouTube Music and 150+ stores, and collects your royalties.
+          Pick one distributor, upload your song and cover art, set a release date, and they handle the rest.
+        </p>
+      </div>
+
+      <SectionHead kicker="Step by step" title="Your release checklist" />
+      <div style={{ display: "grid", gap: 10, marginBottom: 26 }}>
+        {RELEASE_STEPS.map(([t, d], i) => (
+          <div key={t} style={{ ...card, display: "flex", gap: 14, alignItems: "flex-start" }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${C.rust}18`, color: C.rust,
+              display: "grid", placeItems: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{i + 1}</div>
+            <div>
+              <div style={{ fontWeight: 700 }}>{t}</div>
+              <p style={{ color: C.soft, fontSize: 14, lineHeight: 1.5, margin: "4px 0 0" }}>{d}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <SectionHead kicker="Compare" title="Popular distributors" />
+      <p style={{ color: C.soft, fontSize: 13, marginTop: -6, marginBottom: 14 }}>
+        A few well-known options — compare and pick what fits your budget and release pace. (These are independent services; Anthem isn't affiliated.)
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14 }}>
+        {DISTRIBUTORS.map(d => (
+          <div key={d.name} style={card}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 600 }}>{d.name}</div>
+              <span style={{ fontSize: 12, color: C.teal, fontWeight: 600 }}>{d.price}</span>
+            </div>
+            <div style={{ color: C.rust, fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: .4, marginTop: 4 }}>{d.best}</div>
+            <p style={{ color: C.soft, fontSize: 14, lineHeight: 1.5, marginTop: 8 }}>{d.note}</p>
+            <a href={d.url} target="_blank" rel="noopener" style={{ display: "inline-flex", alignItems: "center", gap: 6,
+              color: C.ink, fontSize: 13, fontWeight: 600, textDecoration: "none", marginTop: 6 }}>
+              Visit {d.name} <ArrowRight size={14} />
+            </a>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ ...card, marginTop: 22, background: `${C.plum}0d`, borderColor: `${C.plum}40` }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Need a hand?</div>
+        <p style={{ color: C.soft, fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+          Ask <strong>Nora</strong> about release strategy and timing, or use the <strong>Release Campaign</strong> tool to plan your whole rollout in one go.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ---- Booking calendar (in-app, free) ---- */
 const COMMON_TZ = [
   "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York",
@@ -2761,6 +2837,7 @@ function CalendarPanel({ auth }) {
 function SettingsPanel({ auth }) {
   const [tz, setTz] = useState("");
   const [hours, setHours] = useState({});
+  const [digest, setDigest] = useState(true);
   const [saved, setSaved] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
@@ -2771,6 +2848,7 @@ function SettingsPanel({ auth }) {
           const s = await api.getSettings(auth.token);
           setTz(s.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
           setHours(s.businessHours || { mon: ["10:00", "18:00"], tue: ["10:00", "18:00"], wed: ["10:00", "18:00"], thu: ["10:00", "18:00"], fri: ["10:00", "18:00"] });
+          setDigest(s.weeklyDigest !== false);
         } catch {}
       } else {
         setTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -2793,7 +2871,7 @@ function SettingsPanel({ auth }) {
 
   async function save() {
     try {
-      if (api.live() && auth?.token) await api.saveSettings(auth.token, { timezone: tz, businessHours: hours });
+      if (api.live() && auth?.token) await api.saveSettings(auth.token, { timezone: tz, businessHours: hours, weeklyDigest: digest });
       setSaved(true); setTimeout(() => setSaved(false), 2000);
     } catch (e) { alert(e.message); }
   }
@@ -2833,6 +2911,16 @@ function SettingsPanel({ auth }) {
             </div>
           ))}
         </div>
+      </div>
+
+      <div style={{ ...card, marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Weekly email digest</div>
+        <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>Get a Monday email with your upcoming bookings and a tip to keep momentum.</p>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={digest} onChange={e => setDigest(e.target.checked)}
+            style={{ width: 16, height: 16, accentColor: C.rust }} />
+          <span style={{ fontSize: 14 }}>Email me the weekly digest</span>
+        </label>
       </div>
 
       <button onClick={save} style={btn(saved ? C.sage : C.rust)}>
