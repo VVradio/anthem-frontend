@@ -369,6 +369,43 @@ const api = {
     if (!r.ok) throw new Error("Not found");
     return r.json();
   },
+  async listFans(token) {
+    const r = await fetch(`${API_BASE}/api/fans`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load");
+    return r.json();
+  },
+  async addFan(token, name, email) {
+    const r = await fetch(`${API_BASE}/api/fans`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name, email }) });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not add");
+    return r.json();
+  },
+  async deleteFan(token, id) {
+    const r = await fetch(`${API_BASE}/api/fans/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not delete");
+    return r.json();
+  },
+  async blastFans(token, subject, message) {
+    const r = await fetch(`${API_BASE}/api/fans/blast`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ subject, message }) });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not send");
+    return r.json();
+  },
+  async joinFanList(code, name, email) {
+    const r = await fetch(`${API_BASE}/api/fans/join/${code}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email }) });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not join");
+    return r.json();
+  },
+  async fanPage(code) {
+    const r = await fetch(`${API_BASE}/api/fans/page/${code}`);
+    if (!r.ok) throw new Error("Not found");
+    return r.json();
+  },
 };
 
 // Fallback used only when no backend is configured (keeps the preview working).
@@ -499,6 +536,7 @@ export default function App() {
   const [resetToken, setResetToken] = useState(null);
   const [epkCode, setEpkCode] = useState(null);
   const [splitCode, setSplitCode] = useState(null);
+  const [joinCode, setJoinCode] = useState(null);
 
   // Restore a remembered session on load (if the user chose "Remember me").
   useEffect(() => {
@@ -531,6 +569,11 @@ export default function App() {
     try {
       const sm = /[?&]split=([^&]+)/.exec(window.location.search);
       if (sm && sm[1]) { setSplitCode(decodeURIComponent(sm[1])); setView("split"); }
+    } catch {}
+    // If they opened an artist's fan-signup link (?join=CODE), show the join page.
+    try {
+      const jm = /[?&]join=([^&]+)/.exec(window.location.search);
+      if (jm && jm[1]) { setJoinCode(decodeURIComponent(jm[1])); setView("join"); }
     } catch {}
   }, []);
 
@@ -598,6 +641,7 @@ export default function App() {
       {view === "reset" && <ResetPassword token={resetToken} onDone={() => { setResetToken(null); setView("login"); }} />}
       {view === "epk" && <PublicEPK code={epkCode} />}
       {view === "split" && <PublicSplitSheet code={splitCode} />}
+      {view === "join" && <FanJoinPage code={joinCode} />}
       {view === "dashboard" && <Dashboard auth={auth} onExit={() => setView("landing")} onLogout={logout} />}
     </div>
   );
@@ -1108,6 +1152,61 @@ function PublicSplitSheet({ code }) {
   );
 }
 
+/* ============================ PUBLIC FAN SIGNUP ============================ */
+function FanJoinPage({ code }) {
+  const [valid, setValid] = useState(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => { api.fanPage(code).then(() => setValid(true)).catch(() => setValid(false)); }, [code]);
+
+  async function join() {
+    setErr("");
+    if (!email.trim()) { setErr("Please enter your email."); return; }
+    setBusy(true);
+    try { await api.joinFanList(code, name.trim(), email.trim()); setDone(true); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  if (valid === false) return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20, textAlign: "center" }}>
+      <div><div style={{ fontFamily: FONT_DISPLAY, fontSize: 24 }}>List not found</div>
+        <p style={{ color: C.soft }}>This signup link may be incorrect or no longer active.</p></div>
+    </div>
+  );
+  if (valid === null) return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}><Loader2 className="spin" /></div>;
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.cream, display: "grid", placeItems: "center", padding: 20 }}>
+      <div className="rise" style={{ ...card, width: "100%", maxWidth: 420, padding: 34, textAlign: "center" }}>
+        <Logo />
+        {done ? (
+          <>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 600, margin: "18px 0 6px" }}>You're on the list! 🎉</div>
+            <p style={{ color: C.soft }}>Thanks for joining — you'll be the first to hear about new music and shows.</p>
+          </>
+        ) : (
+          <>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 600, margin: "18px 0 6px" }}>Join the mailing list</div>
+            <p style={{ color: C.soft, marginTop: 0 }}>Get new releases, show announcements, and updates straight to your inbox.</p>
+            <div style={{ display: "grid", gap: 10, marginTop: 18, textAlign: "left" }}>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name (optional)" style={inp} />
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Your email" style={inp} type="email" onKeyDown={e => e.key === "Enter" && join()} />
+              {err && <div style={{ color: C.rust, fontSize: 13 }}>{err}</div>}
+              <button onClick={join} disabled={busy} style={{ ...btn(C.rust), justifyContent: "center", opacity: busy ? .6 : 1 }}>
+                {busy ? "…" : "Join the list"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ============================ DASHBOARD ============================ */
 function Dashboard({ auth, onExit, onLogout }) {
   const [tab, setTab] = useState("overview");
@@ -1152,6 +1251,7 @@ function Dashboard({ auth, onExit, onLogout }) {
     { id: "calendar", label: "Calendar", icon: Clock, color: C.teal },
     { id: "distribution", label: "Distribution", icon: Rocket, color: C.rust },
     { id: "royalties", label: "Royalties & Splits", icon: DollarSign, color: C.sage },
+    { id: "fans", label: "Fans", icon: Inbox, color: C.gold },
     { id: "referral", label: "Referrals", icon: Gift },
     { id: "billing", label: "Billing & plan", icon: Wallet, color: C.teal },
     { id: "settings", label: "Settings", icon: SlidersHorizontal, color: C.soft },
@@ -1243,6 +1343,7 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "calendar" && <CalendarPanel auth={auth} />}
         {tab === "distribution" && <DistributionPanel profile={profile} />}
         {tab === "royalties" && <RoyaltiesPanel auth={auth} />}
+        {tab === "fans" && <FansPanel auth={auth} />}
         {tab === "settings" && <SettingsPanel auth={auth} />}
         {AGENTS.map(a => tab === a.id && (
           planAllows(plan, a.id, auth?.user)
@@ -2848,6 +2949,147 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
         </button>
       </div>
       </>}
+    </div>
+  );
+}
+
+/* ---- Fan mailing list / CRM ---- */
+function FansPanel({ auth }) {
+  const [fans, setFans] = useState([]);
+  const [fanCode, setFanCode] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [q, setQ] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+
+  async function load() {
+    if (api.live() && auth?.token) {
+      try { const d = await api.listFans(auth.token); setFans(d.fans || []); setFanCode(d.fanCode || ""); } catch {}
+    }
+  }
+  useEffect(() => { load(); }, [auth]);
+
+  const signupUrl = fanCode ? `${window.location.origin}/?join=${fanCode}` : "";
+
+  async function add() {
+    if (!email.trim()) return;
+    try { await api.addFan(auth.token, name.trim(), email.trim()); setName(""); setEmail(""); load(); }
+    catch (e) { alert(e.message); }
+  }
+  async function remove(id) {
+    try { await api.deleteFan(auth.token, id); load(); } catch (e) { alert(e.message); }
+  }
+  function exportCSV() {
+    const rows = [["Name", "Email", "Source", "Joined"], ...fans.map(f => [f.name || "", f.email, f.source, new Date(f.when).toLocaleDateString()])];
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "fans.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function sendBlast() {
+    if (!subject.trim() || !message.trim()) { alert("Add a subject and message."); return; }
+    if (!confirm(`Send this to all ${fans.length} fans?`)) return;
+    setSending(true);
+    try {
+      const r = await api.blastFans(auth.token, subject.trim(), message.trim());
+      alert(`Sent to ${r.sent} of ${r.total} fans.`);
+      setComposing(false); setSubject(""); setMessage("");
+    } catch (e) { alert(e.message); } finally { setSending(false); }
+  }
+
+  const filtered = fans.filter(f => !q || (f.email + (f.name || "")).toLowerCase().includes(q.toLowerCase()));
+
+  return (
+    <div className="rise">
+      <PageTitle title="Fans" sub="Build your mailing list and reach your fans directly." />
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 14, marginBottom: 18 }}>
+        <div style={card}><div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: C.gold }}>{fans.length}</div><div style={{ color: C.soft, fontSize: 13 }}>Total fans</div></div>
+        <div style={card}><div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: C.teal }}>{fans.filter(f => f.source === "signup").length}</div><div style={{ color: C.soft, fontSize: 13 }}>From signup page</div></div>
+      </div>
+
+      {/* Public signup link */}
+      <div style={{ ...card, marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Your "join my list" link</div>
+        <p style={{ color: C.soft, fontSize: 13, marginTop: 0 }}>Share this anywhere — bio, posts, shows. Fans who sign up land right here.</p>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <a href={signupUrl} target="_blank" rel="noopener" style={{ flex: 1, minWidth: 180, color: C.ink, fontSize: 13, wordBreak: "break-all" }}>{signupUrl}</a>
+          <button onClick={() => { navigator.clipboard?.writeText(signupUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+            style={{ ...btn(copied ? C.sage : C.teal), fontSize: 13, padding: "8px 14px" }}>
+            {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy link</>}
+          </button>
+        </div>
+      </div>
+
+      {/* Add + actions */}
+      <div style={{ ...card, marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 10 }}>Add a fan</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (optional)" style={{ ...inp, flex: 1, minWidth: 120 }} />
+          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={{ ...inp, flex: 1, minWidth: 160 }} onKeyDown={e => e.key === "Enter" && add()} />
+          <button onClick={add} style={btn(C.rust)}>Add</button>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+          <button onClick={() => setComposing(c => !c)} style={btn(C.plum)}><MailIcon size={15} /> Email all fans</button>
+          <button onClick={exportCSV} style={btn("transparent")}><Download size={15} /> Export CSV</button>
+        </div>
+      </div>
+
+      {/* Blast composer */}
+      {composing && (
+        <div style={{ ...card, marginBottom: 18 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>Email all {fans.length} fans</div>
+          <div style={{ display: "grid", gap: 10 }}>
+            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject — e.g. My new single is out!" style={inp} />
+            <textarea value={message} onChange={e => setMessage(e.target.value)} rows={6} placeholder="Write your message to fans…" style={{ ...inp, resize: "vertical" }} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={sendBlast} disabled={sending} style={{ ...btn(C.rust), opacity: sending ? .6 : 1 }}>
+                {sending ? "Sending…" : `Send to ${fans.length} fans`}
+              </button>
+              <button onClick={() => setComposing(false)} style={btn("transparent")}>Cancel</button>
+            </div>
+            <p style={{ color: C.soft, fontSize: 12, margin: 0 }}>Sent from your verified domain. An unsubscribe note is added automatically.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Fan list */}
+      <div style={card}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontWeight: 700 }}>Your fans</div>
+          {fans.length > 0 && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…" style={{ ...inp, width: 180, padding: "7px 10px" }} />}
+        </div>
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: "center", color: C.soft, padding: 24 }}>
+            {fans.length === 0 ? "No fans yet. Share your signup link or add one above." : "No matches."}
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead><tr style={{ color: C.soft, textAlign: "left" }}>
+                {["Name", "Email", "Source", ""].map(h => <th key={h} style={{ padding: "8px 10px", fontWeight: 600 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>{filtered.map(f => (
+                <tr key={f.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                  <td style={{ padding: "10px" }}>{f.name || "—"}</td>
+                  <td style={{ padding: "10px", wordBreak: "break-all" }}>{f.email}</td>
+                  <td style={{ padding: "10px" }}><span style={{ fontSize: 11, color: f.source === "signup" ? C.teal : C.soft }}>{f.source}</span></td>
+                  <td style={{ padding: "10px", textAlign: "right" }}>
+                    <button onClick={() => remove(f.id)} style={{ background: "none", border: "none", color: C.soft, cursor: "pointer" }}><X size={15} /></button>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
