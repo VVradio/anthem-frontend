@@ -757,7 +757,7 @@ function Landing({ onLaunch, onCheckout }) {
         background: "rgba(250,246,240,.8)", borderBottom: `1px solid ${C.line}` }}>
         <div style={wrap}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0" }}>
-            <Logo />
+            <Logo size={64} />
             <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
               {["Agents", "Pricing", "Referrals"].map(l => (
                 <a key={l} href={`#${l.toLowerCase()}`} className="navlink"
@@ -777,6 +777,7 @@ function Landing({ onLaunch, onCheckout }) {
            radial-gradient(600px 420px at -5% 25%, rgba(122,92,116,.12), transparent)` }} />
         <div style={{ ...wrap, position: "relative" }}>
           <div style={{ padding: "84px 0 64px", maxWidth: 820 }}>
+            <div className="rise" style={{ marginBottom: 24 }}><Logo size={150} /></div>
             <span className="rise" style={pill}><Music2 size={14} color={C.rust} /> A creative team for working musicians</span>
             <h1 className="rise" style={{ fontFamily: FONT_DISPLAY, fontSize: "clamp(40px,7vw,74px)",
               lineHeight: 1.04, margin: "20px 0 0", fontWeight: 600, letterSpacing: -1 }}>
@@ -4459,9 +4460,9 @@ function btn(bg, big) {
     border: solid ? "none" : `1px solid ${C.line}`, fontWeight: 600, fontFamily: FONT_BODY,
     padding: big ? "15px 24px" : "11px 18px", borderRadius: 12, fontSize: big ? 16 : 14, textDecoration: "none" };
 }
-function Logo() {
+function Logo({ size = 52 }) {
   return (
-    <img src={anthemLogo} alt="Anthem" style={{ height: 52, width: "auto", display: "block", objectFit: "contain" }} />
+    <img src={anthemLogo} alt="Anthem" style={{ height: size, width: "auto", display: "block", objectFit: "contain" }} />
   );
 }
 function Stat({ n, l }) {
