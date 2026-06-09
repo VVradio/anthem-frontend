@@ -4461,7 +4461,7 @@ function btn(bg, big) {
 }
 function Logo() {
   return (
-    <img src={anthemLogo} alt="Anthem" style={{ height: 34, width: "auto", display: "block", objectFit: "contain" }} />
+    <img src={anthemLogo} alt="Anthem" style={{ height: 52, width: "auto", display: "block", objectFit: "contain" }} />
   );
 }
 function Stat({ n, l }) {
