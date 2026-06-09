@@ -280,6 +280,12 @@ const api = {
     if (!r.ok) throw new Error((await r.json()).error || "Could not update");
     return r.json();
   },
+  async adminDeleteUser(token, id) {
+    const r = await fetch(`${API_BASE}/api/admin/user/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not delete");
+    return r.json();
+  },
   async cancelPlan(token) {
     const r = await fetch(`${API_BASE}/api/billing/cancel`, {
       method: "POST", headers: { Authorization: `Bearer ${token}` } });
@@ -3910,6 +3916,12 @@ function AdminPanel({ auth }) {
     catch (e) { alert(e.message); }
   }
 
+  async function deleteUser(id, email) {
+    if (!confirm(`Permanently delete ${email}? This removes their account and all their data. This cannot be undone.`)) return;
+    try { await api.adminDeleteUser(auth.token, id); load(); }
+    catch (e) { alert(e.message); }
+  }
+
   const fmtDate = d => { try { return new Date(d).toLocaleDateString(); } catch { return "—"; } };
   const planColor = { trial: C.gold, indie: C.teal, artist: C.rust, label: C.plum, canceled: C.soft };
 
@@ -3951,15 +3963,22 @@ function AdminPanel({ auth }) {
                     </td>
                     <td style={{ padding: "10px", color: C.soft }}>{fmtDate(u.createdAt)}</td>
                     <td style={{ padding: "10px" }}>
-                      <select value="" onChange={e => { if (e.target.value) setPlan(u.id, e.target.value); }}
-                        style={{ ...inp, padding: "6px 8px", fontSize: 12, width: "auto" }}>
-                        <option value="">Change…</option>
-                        <option value="label">Comp free (Label)</option>
-                        <option value="artist">Set Artist</option>
-                        <option value="indie">Set Indie</option>
-                        <option value="trial">Reset to Trial</option>
-                        <option value="canceled">Cancel</option>
-                      </select>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <select value="" onChange={e => { if (e.target.value) setPlan(u.id, e.target.value); }}
+                          style={{ ...inp, padding: "6px 8px", fontSize: 12, width: "auto" }}>
+                          <option value="">Change…</option>
+                          <option value="label">Comp free (Label)</option>
+                          <option value="artist">Set Artist</option>
+                          <option value="indie">Set Indie</option>
+                          <option value="trial">Reset to Trial</option>
+                          <option value="canceled">Cancel</option>
+                        </select>
+                        <button onClick={() => deleteUser(u.id, u.email)} title="Delete user"
+                          style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px",
+                            cursor: "pointer", color: C.rust, display: "inline-flex", alignItems: "center" }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}</tbody>
