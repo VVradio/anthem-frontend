@@ -921,7 +921,8 @@ function Landing({ onLaunch, onCheckout }) {
           <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 40, alignItems: "center" }}>
             <div>
               <span style={pill}><Gift size={14} color={C.rust} /> Referral program</span>
-              <h3 style={{ fontFamily: FONT_DISPLAY, fontSize: 32, margin: "14px 0 10px", fontWeight: 600 }}>
+              <div style={{ margin: "14px 0 6px" }}><Logo size={44} /></div>
+              <h3 style={{ fontFamily: FONT_DISPLAY, fontSize: 32, margin: "8px 0 10px", fontWeight: 600 }}>
                 Put other artists on, earn <span style={{ color: C.rust }}>30%</span> recurring.
               </h3>
               <p style={{ color: C.soft, lineHeight: 1.65, fontSize: 15 }}>
@@ -1138,8 +1139,9 @@ function PublicEPK({ code }) {
             <strong>Booking & contact:</strong> {data.contact}
           </div>
         )}
-        <div style={{ marginTop: 28, textAlign: "center", color: C.soft, fontSize: 12 }}>
-          Press kit powered by <strong>Anthem</strong>
+        <div style={{ marginTop: 28, textAlign: "center", color: C.soft, fontSize: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <img src={anthemLogo} alt="Anthem" style={{ height: 30, width: "auto", opacity: .85 }} />
+          <span>Press kit powered by Anthem</span>
         </div>
       </div>
     </div>
@@ -1182,8 +1184,9 @@ function PublicSplitSheet({ code }) {
             </tr>
           ))}</tbody>
         </table>
-        <div style={{ marginTop: 28, textAlign: "center", color: C.soft, fontSize: 12 }}>
-          A record of agreed splits, generated with <strong>Anthem</strong>. Not a legal contract.
+        <div style={{ marginTop: 28, textAlign: "center", color: C.soft, fontSize: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <img src={anthemLogo} alt="Anthem" style={{ height: 28, width: "auto", opacity: .85 }} />
+          <span>A record of agreed splits, generated with Anthem. Not a legal contract.</span>
         </div>
       </div>
     </div>
@@ -4005,6 +4008,7 @@ const COMING_SOON = [
   { title: "Merch store", desc: "Sell shirts, vinyl, and digital goods to your fans right from Anthem.", icon: Inbox, color: C.rust, tag: "Exploring" },
   { title: "Tour routing map", desc: "Plan smart tour routes and find venues along the way.", icon: MapPin, color: C.teal, tag: "Exploring" },
   { title: "AI mastering", desc: "Master your tracks to streaming-ready loudness in one click.", icon: Sparkles, color: C.gold, tag: "Exploring" },
+  { title: "White-label platform", desc: "Run Anthem under your own brand — your logo, your colors, your domain. Built for labels & agencies.", icon: Sparkles, color: C.plum, tag: "Exploring" },
 ];
 
 function FeaturesPanel({ auth }) {
