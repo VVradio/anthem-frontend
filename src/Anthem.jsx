@@ -89,6 +89,36 @@ const api = {
     if (!r.ok) throw new Error("Job not found");
     return r.json(); // { status, result, isSvg, error }
   },
+  async listThreads(token) {
+    const r = await fetch(`${API_BASE}/api/forum`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load forum");
+    return r.json();
+  },
+  async getThread(token, id) {
+    const r = await fetch(`${API_BASE}/api/forum/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load thread");
+    return r.json();
+  },
+  async addThread(token, title, body) {
+    const r = await fetch(`${API_BASE}/api/forum`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title, body }) });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not post");
+    return r.json();
+  },
+  async addReply(token, id, body) {
+    const r = await fetch(`${API_BASE}/api/forum/${id}/reply`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ body }) });
+    if (!r.ok) throw new Error((await r.json()).error || "Could not reply");
+    return r.json();
+  },
+  async deleteThread(token, id) {
+    const r = await fetch(`${API_BASE}/api/forum/${id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not delete");
+    return r.json();
+  },
   // Start a background job and poll until it finishes. The answer is generated
   // server-side, so it completes even if the user navigates away mid-request.
   async chatBackground(token, agentId, messages, { onJobId } = {}) {
@@ -1323,6 +1353,7 @@ function Dashboard({ auth, onExit, onLogout }) {
     { id: "royalties", label: "Royalties & Splits", icon: DollarSign, color: C.sage },
     { id: "sync", label: "Sync Licensing", icon: Music, color: C.plum },
     { id: "fans", label: "Fans", icon: Inbox, color: C.gold },
+    { id: "community", label: "Community", icon: MessageCircle, color: C.plum },
     { id: "referral", label: "Referrals", icon: Gift },
     { id: "billing", label: "Billing & plan", icon: Wallet, color: C.teal },
     { id: "settings", label: "Settings", icon: SlidersHorizontal, color: C.soft },
@@ -1416,6 +1447,7 @@ function Dashboard({ auth, onExit, onLogout }) {
         {tab === "royalties" && <RoyaltiesPanel auth={auth} />}
         {tab === "sync" && <SyncPanel auth={auth} />}
         {tab === "fans" && <FansPanel auth={auth} />}
+        {tab === "community" && <CommunityPanel auth={auth} />}
         {tab === "settings" && <SettingsPanel auth={auth} />}
         {AGENTS.map(a => tab === a.id && (
           planAllows(plan, a.id, auth?.user)
@@ -3247,6 +3279,161 @@ function SyncTrackCard({ track, auth, onChange }) {
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- Community forum ---- */
+function timeAgo(iso) {
+  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function CommunityPanel({ auth }) {
+  const [threads, setThreads] = useState([]);
+  const [open, setOpen] = useState(null); // open thread id
+  const [composing, setComposing] = useState(false);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    if (api.live() && auth?.token) {
+      try { const d = await api.listThreads(auth.token); setThreads(d.threads || []); } catch {}
+    }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [auth]);
+
+  async function post() {
+    if (!title.trim()) return;
+    try { await api.addThread(auth.token, title.trim(), body.trim()); setTitle(""); setBody(""); setComposing(false); load(); }
+    catch (e) { alert(e.message); }
+  }
+
+  if (open) return <ThreadView auth={auth} id={open} onBack={() => { setOpen(null); load(); }} />;
+
+  return (
+    <div className="rise">
+      <PageTitle title="Community" sub="Connect with other artists — ask questions, share what's working." />
+
+      {!api.live() ? (
+        <div style={{ ...card, textAlign: "center", color: C.soft, padding: 30 }}>
+          The community is available once you're signed in on the live site.
+        </div>
+      ) : (
+        <>
+          {!composing ? (
+            <button onClick={() => setComposing(true)} style={{ ...btn(C.rust), marginBottom: 18 }}>
+              <PenLine size={16} /> Start a discussion
+            </button>
+          ) : (
+            <div style={{ ...card, marginBottom: 18, display: "grid", gap: 10 }}>
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Topic title" style={inp} />
+              <textarea value={body} onChange={e => setBody(e.target.value)} rows={4} placeholder="Share your question or thoughts…" style={{ ...inp, resize: "vertical" }} />
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={post} style={btn(C.rust)}>Post</button>
+                <button onClick={() => setComposing(false)} style={btn("transparent")}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 30 }}><Loader2 className="spin" /></div>
+          ) : threads.length === 0 ? (
+            <div style={{ ...card, textAlign: "center", color: C.soft, padding: 36 }}>
+              <MessageCircle size={28} color={C.soft} style={{ margin: "0 auto 10px" }} />
+              No discussions yet. Be the first to start one!
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {threads.map(t => (
+                <button key={t.id} onClick={() => setOpen(t.id)} style={{ ...card, textAlign: "left", cursor: "pointer", border: `1px solid ${C.line}` }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 600 }}>{t.title}</div>
+                  {t.body && <div style={{ color: C.soft, fontSize: 14, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.body}</div>}
+                  <div style={{ color: C.soft, fontSize: 12, marginTop: 8, display: "flex", gap: 12 }}>
+                    <span>by {t.author}</span>
+                    <span>· {t.replyCount} {t.replyCount === 1 ? "reply" : "replies"}</span>
+                    <span>· {timeAgo(t.updatedAt)}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          <p style={{ color: C.soft, fontSize: 12, marginTop: 18, textAlign: "center" }}>
+            Be respectful and keep it music-related. Posts that break that may be removed.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ThreadView({ auth, id, onBack }) {
+  const [thread, setThread] = useState(null);
+  const [reply, setReply] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    try { const d = await api.getThread(auth.token, id); setThread(d.thread); } catch { setThread(null); }
+  }
+  useEffect(() => { load(); }, [id]);
+
+  async function sendReply() {
+    if (!reply.trim()) return;
+    setBusy(true);
+    try { await api.addReply(auth.token, id, reply.trim()); setReply(""); await load(); }
+    catch (e) { alert(e.message); } finally { setBusy(false); }
+  }
+  async function del() {
+    if (!confirm("Delete this discussion?")) return;
+    try { await api.deleteThread(auth.token, id); onBack(); } catch (e) { alert(e.message); }
+  }
+
+  return (
+    <div className="rise">
+      <button onClick={onBack} style={{ ...btn("transparent"), marginBottom: 14 }}>← Back to community</button>
+      {!thread ? (
+        <div style={{ textAlign: "center", padding: 30 }}><Loader2 className="spin" /></div>
+      ) : (
+        <>
+          <div style={{ ...card, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 600 }}>{thread.title}</div>
+              {(auth?.user?.owner || thread.userId === auth?.user?.id) && (
+                <button onClick={del} style={{ background: "none", border: "none", color: C.soft, cursor: "pointer", display: "flex", gap: 5, alignItems: "center", fontSize: 13 }}>
+                  <Trash2 size={14} /> Delete
+                </button>
+              )}
+            </div>
+            <div style={{ color: C.soft, fontSize: 12, marginTop: 4 }}>by {thread.author} · {timeAgo(thread.createdAt)}</div>
+            {thread.body && <p style={{ marginTop: 12, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{thread.body}</p>}
+          </div>
+
+          <div style={{ fontWeight: 700, fontSize: 14, margin: "8px 4px 12px" }}>
+            {thread.replies.length} {thread.replies.length === 1 ? "reply" : "replies"}
+          </div>
+          <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
+            {thread.replies.map(r => (
+              <div key={r.id} style={{ ...card }}>
+                <div style={{ color: C.soft, fontSize: 12, marginBottom: 4 }}>{r.author} · {timeAgo(r.createdAt)}</div>
+                <div style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{r.body}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ ...card, display: "grid", gap: 10 }}>
+            <textarea value={reply} onChange={e => setReply(e.target.value)} rows={3} placeholder="Write a reply…" style={{ ...inp, resize: "vertical" }} />
+            <button onClick={sendReply} disabled={busy} style={{ ...btn(C.rust), opacity: busy ? .6 : 1, justifySelf: "start" }}>
+              {busy ? "Posting…" : "Post reply"}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
