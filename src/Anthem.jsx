@@ -75,6 +75,35 @@ const api = {
     if (!r.ok) throw new Error((await r.json()).error || "Chat failed");
     return r.json(); // { text } or { svg }
   },
+  async chatStart(token, agentId, messages) {
+    const r = await fetch(`${API_BASE}/api/chat/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ agentId, messages }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || "Chat failed");
+    return r.json(); // { jobId }
+  },
+  async chatJob(token, jobId) {
+    const r = await fetch(`${API_BASE}/api/chat/job/${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Job not found");
+    return r.json(); // { status, result, isSvg, error }
+  },
+  // Start a background job and poll until it finishes. The answer is generated
+  // server-side, so it completes even if the user navigates away mid-request.
+  async chatBackground(token, agentId, messages, { onJobId } = {}) {
+    const { jobId } = await this.chatStart(token, agentId, messages);
+    if (onJobId) onJobId(jobId);
+    // Poll up to ~3 min.
+    for (let i = 0; i < 180; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      let job;
+      try { job = await this.chatJob(token, jobId); } catch { continue; }
+      if (job.status === "done") return job.isSvg ? { svg: job.result } : { text: job.result };
+      if (job.status === "error") throw new Error(job.error || "Chat failed");
+    }
+    throw new Error("Timed out");
+  },
   async streams(token) {
     const r = await fetch(`${API_BASE}/api/streams`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -1768,6 +1797,11 @@ function ProfilePanel({ profile, onSave, auth }) {
           Turn your profile into a one-page press kit you can send to venues, blogs, and curators.
           Fill in your details above first, then download it as a PDF.
         </p>
+        <div style={{ background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 10,
+          padding: "10px 13px", fontSize: 13, color: C.ink, marginBottom: 14 }}>
+          <strong>To edit or update your EPK:</strong> change your details in the Artist Profile fields above,
+          hit <strong>Save profile</strong>, then click <strong>Update share link</strong> below so your shared kit shows the latest.
+        </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button onClick={() => downloadEPK(f)} style={btn(C.plum)}>
             <Download size={16} /> Download EPK (PDF)
@@ -2696,6 +2730,31 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
     return () => { cancelled = true; };
   }, [agent.id, auth]);
 
+  // Background mode: if a job was running when the user left this agent, resume it.
+  useEffect(() => {
+    let cancelled = false;
+    if (!api.live() || !auth?.token) return;
+    let jid = null;
+    try { jid = localStorage.getItem(`anthem_job_${agent.id}`); } catch {}
+    if (!jid) return;
+    setBusy(true);
+    (async () => {
+      for (let i = 0; i < 180 && !cancelled; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        let job;
+        try { job = await api.chatJob(auth.token, jid); } catch { continue; }
+        if (job.status === "done") {
+          if (!cancelled) setMsgs(m => [...m, { role: "assistant", text: job.isSvg ? "" : (job.result || "…"), svg: job.isSvg ? job.result : undefined }]);
+          break;
+        }
+        if (job.status === "error") break;
+      }
+      try { localStorage.removeItem(`anthem_job_${agent.id}`); } catch {}
+      if (!cancelled) setBusy(false);
+    })();
+    return () => { cancelled = true; };
+  }, [agent.id, auth]);
+
   // Auto-save the conversation whenever it changes (after the initial load).
   useEffect(() => {
     if (!loaded || !api.live() || !auth?.token) return;
@@ -2793,7 +2852,10 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
         const sent = ctx ? [{ role: "user", content: `(Context about me — keep in mind:${ctx})` },
                             { role: "assistant", content: "Got it — I'll keep your profile in mind." },
                             ...payload] : payload;
-        const data = await api.chat(auth.token, agent.id, sent);
+        const data = await api.chatBackground(auth.token, agent.id, sent, {
+          onJobId: (jid) => { try { localStorage.setItem(`anthem_job_${agent.id}`, jid); } catch {} },
+        });
+        try { localStorage.removeItem(`anthem_job_${agent.id}`); } catch {}
         setMsgs(m => [...m, { role: "assistant", text: data.text || "…" }]);
       } else {
         // Preview fallback: direct demo call.
