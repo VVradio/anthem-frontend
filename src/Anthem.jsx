@@ -2760,8 +2760,17 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
     if (!loaded || !api.live() || !auth?.token) return;
     // Don't bother saving a brand-new empty chat (just the greeting).
     if (msgs.length <= 1) return;
+    // Strip heavy generated-image data (base64/SVG) before saving — it can be
+    // several MB and would blow past the server's body limit (HTTP 413).
+    const lean = msgs.map(m => {
+      if (m.img || m.svg) {
+        const { img, svg, ...rest } = m;
+        return { ...rest, text: m.text || "[generated image]" };
+      }
+      return m;
+    });
     const t = setTimeout(() => {
-      api.saveHistory(auth.token, agent.id, msgs)
+      api.saveHistory(auth.token, agent.id, lean)
         .then(() => { setSavedTick(true); setTimeout(() => setSavedTick(false), 1500); })
         .catch(() => {});
     }, 600);
