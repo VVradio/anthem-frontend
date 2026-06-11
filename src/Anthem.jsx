@@ -75,11 +75,11 @@ const api = {
     if (!r.ok) throw new Error((await r.json()).error || "Chat failed");
     return r.json(); // { text } or { svg }
   },
-  async chatStart(token, agentId, messages) {
+  async chatStart(token, agentId, messages, feed) {
     const r = await fetch(`${API_BASE}/api/chat/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ agentId, messages }),
+      body: JSON.stringify({ agentId, messages, feed }),
     });
     if (!r.ok) throw new Error((await r.json()).error || "Chat failed");
     return r.json(); // { jobId }
@@ -121,8 +121,8 @@ const api = {
   },
   // Start a background job and poll until it finishes. The answer is generated
   // server-side, so it completes even if the user navigates away mid-request.
-  async chatBackground(token, agentId, messages, { onJobId } = {}) {
-    const { jobId } = await this.chatStart(token, agentId, messages);
+  async chatBackground(token, agentId, messages, { onJobId, feed } = {}) {
+    const { jobId } = await this.chatStart(token, agentId, messages, feed);
     if (onJobId) onJobId(jobId);
     // Poll up to ~3 min.
     for (let i = 0; i < 180; i++) {
@@ -2809,6 +2809,11 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
       return m;
     });
     const t = setTimeout(() => {
+      // If a background job is still pending for this agent, don't overwrite —
+      // the server is saving the answer into history itself.
+      let pending = null;
+      try { pending = localStorage.getItem(`anthem_job_${agent.id}`); } catch {}
+      if (pending) return;
       api.saveHistory(auth.token, agent.id, lean)
         .then(() => { setSavedTick(true); setTimeout(() => setSavedTick(false), 1500); })
         .catch(() => {});
@@ -2900,8 +2905,12 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
         const sent = ctx ? [{ role: "user", content: `(Context about me — keep in mind:${ctx})` },
                             { role: "assistant", content: "Got it — I'll keep your profile in mind." },
                             ...payload] : payload;
+        // The visible feed (lean, no heavy image data) so the server can append
+        // the answer and save it — making it survive even if the user leaves.
+        const leanFeed = next.map(m => ({ role: m.role, text: m.text || (m.img || m.svg ? "[generated image]" : "") }));
         const data = await api.chatBackground(auth.token, agent.id, sent, {
           onJobId: (jid) => { try { localStorage.setItem(`anthem_job_${agent.id}`, jid); } catch {} },
+          feed: leanFeed,
         });
         try { localStorage.removeItem(`anthem_job_${agent.id}`); } catch {}
         setMsgs(m => [...m, { role: "assistant", text: data.text || "…" }]);
