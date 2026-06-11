@@ -6,7 +6,7 @@ import {
   MessageCircle, Wallet, UserCircle, Rocket, Loader2, BarChart3, Music, Link2,
   FileText, Link as LinkIcon, ListChecks, PenTool, Inbox, Award, Mail as MailIcon,
   ListMusic, Wrench, ArrowLeft, Clock, CalendarPlus, Download, X, Brain, Lock,
-  SlidersHorizontal, Trash2, CalendarDays, Video
+  SlidersHorizontal, Trash2, CalendarDays, Video, Radio
 } from "lucide-react";
 
 // Agent portrait images (bundled). Drop these files into src/assets/agents/.
@@ -616,9 +616,9 @@ const PLANS = [
   { name: "Indie", id: "indie", price: 29, tag: "Solo & emerging artists", accent: C.teal,
     features: ["2 active agents", "35 AI images / mo", "Website chat widget", "Email support"] },
   { name: "Artist", id: "artist", price: 79, tag: "Working musicians", accent: C.rust, popular: true,
-    features: ["All 8 agents", "100 AI images / mo", "Booking & press outreach", "Royalty & contract review", "Referral rewards 2x"] },
+    features: ["All 8 agents", "Variety Vibes Radio airplay", "Variety Vibes TV (Roku & Firestick)", "100 AI images / mo", "Booking, press & royalty review"] },
   { name: "Label", id: "label", price: 249, tag: "Managers, labels & studios", accent: C.plum,
-    features: ["Unlimited artists & agents", "500 AI images / mo", "White-label dashboard", "Team seats", "Dedicated success manager"] },
+    features: ["Unlimited artists & agents", "Variety Vibes Radio airplay", "Variety Vibes TV (Roku & Firestick)", "500 AI images / mo", "Team workspaces & seats"] },
 ];
 
 // ---- Promotions ----
@@ -751,7 +751,7 @@ export default function App() {
 }
 
 /* ============================ SALES BOT ============================ */
-const SALES_SYSTEM_DEMO = `You are the friendly sales assistant on Anthem's website, an AI studio for music careers. Answer questions about plans and features warmly and briefly, and encourage signup. Plans: Indie $29/mo (2 agents, 35 AI images), Artist $79/mo (all 8 agents, 100 images, most popular), Label $249/mo (unlimited, 500 images, white-label). Annual = 2 months free; launch offer 50% off first year; $7 first month on monthly. 8 agents handle A&R, social, booking, contracts, cover art, press, chat, and finance. Never invent prices or features.`;
+const SALES_SYSTEM_DEMO = `You are the friendly sales assistant on Anthem's website, an AI studio for music careers by Variety Vibes Radio & TV. Answer questions about plans and features warmly and briefly, and encourage signup. Plans: Indie $29/mo (2 agents, 35 AI images), Artist $79/mo (all 8 agents, 100 images, most popular — includes Variety Vibes Radio airplay and TV on Roku & Firestick), Label $249/mo (unlimited artists & agents, 500 images, team seats — also includes Radio & TV airplay). There's a free 2-day trial. 8 agents handle A&R, social, booking, contracts, cover art, press, website chat, and finance. Coming soon (not available yet): white-label, one-click social posting, AI mastering, live streaming. Never invent prices or features.`;
 
 function SalesBot() {
   const [open, setOpen] = useState(false);
@@ -855,23 +855,24 @@ function Landing({ onLaunch, onCheckout }) {
         <div style={{ ...wrap, position: "relative" }}>
           <div style={{ padding: "84px 0 64px", maxWidth: 820 }}>
             <div className="rise" style={{ marginBottom: 24 }}><Logo size={150} /></div>
-            <span className="rise" style={pill}><Music2 size={14} color={C.rust} /> A creative team for working musicians</span>
+            <span className="rise" style={pill}><Music2 size={14} color={C.rust} /> By Variety Vibes Radio & TV</span>
             <h1 className="rise" style={{ fontFamily: FONT_DISPLAY, fontSize: "clamp(40px,7vw,74px)",
               lineHeight: 1.04, margin: "20px 0 0", fontWeight: 600, letterSpacing: -1 }}>
               Your whole <span style={{ color: C.rust, fontStyle: "italic" }}>music team</span>,
               run by <span style={{ color: C.teal, fontStyle: "italic" }}>AI</span>.
             </h1>
             <p className="rise" style={{ color: C.soft, fontSize: 19, lineHeight: 1.65, marginTop: 20, maxWidth: 600 }}>
-              Anthem gives artists, managers, and labels an AI A&R strategist, social manager,
-              booking agent, contract reviewer, cover artist, and press writer — all in one studio.
+              Eight AI specialists handle your A&R, social, booking, contracts, cover art, and press.
+              Then we go further than any other tool: real airplay on Variety Vibes Radio, TV, and our app.
+              Make the music — we handle the rest.
             </p>
             <div className="rise" style={{ display: "flex", gap: 12, marginTop: 30, flexWrap: "wrap" }}>
-              <button onClick={onLaunch} style={btn(C.rust, true)}>Open the studio <ArrowRight size={18} /></button>
-              <a href="#pricing" style={btn("transparent")}>See pricing</a>
+              <button onClick={onLaunch} style={btn(C.rust, true)}>Start your free trial <ArrowRight size={18} /></button>
+              <a href="#reach" style={btn("transparent")}>See how it works</a>
             </div>
             <div className="rise" style={{ display: "flex", gap: 26, marginTop: 36, color: C.soft, fontSize: 13, flexWrap: "wrap" }}>
-              <Stat n="24/7" l="always on" /><Stat n="8" l="specialist agents" />
-              <Stat n="4+" l="AI models" /><Stat n="30%" l="referral commission" />
+              <Stat n="8" l="specialist agents" /><Stat n="24/7" l="radio airplay" />
+              <Stat n="TV" l="on Roku & Fire" /><Stat n="$29" l="to start" />
             </div>
           </div>
         </div>
@@ -889,6 +890,82 @@ function Landing({ onLaunch, onCheckout }) {
               <p style={{ color: C.soft, fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>{a.blurb}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Multi-platform reach — the real differentiator */}
+      <section id="reach" style={{ background: C.ink, color: "#fff", marginTop: 40 }}>
+        <div style={{ ...wrap, padding: "64px 0" }}>
+          <div style={{ textAlign: "center", maxWidth: 680, margin: "0 auto 40px" }}>
+            <div style={{ color: C.clay, fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" }}>Multi-platform reach</div>
+            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: "clamp(28px,4vw,42px)", fontWeight: 600, margin: "12px 0 14px" }}>
+              Heard everywhere your audience already is.
+            </h2>
+            <p style={{ color: "rgba(255,255,255,.7)", fontSize: 17, lineHeight: 1.6 }}>
+              Anthem is the only AI music platform that plugs straight into a real media network.
+              Artist and Label plans can submit music for placement across the Variety Vibes Radio & TV family.
+            </p>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 18 }}>
+            {[
+              { n: "01", t: "Variety Vibes Radio", d: "Submit your tracks for airplay on our global indie station — real rotation, real listeners, 24/7.", icon: Radio },
+              { n: "02", t: "Variety Vibes TV", d: "Your music and visuals on the big screen via our TV channel on Roku and Firestick.", icon: Music2 },
+              { n: "03", t: "The Variety Vibes App", d: "Featured placement in our mobile app, keeping you in listeners' pockets wherever they go.", icon: Sparkles },
+            ].map(x => (
+              <div key={x.n} style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)",
+                borderRadius: 16, padding: "24px 22px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <x.icon size={26} color={C.clay} />
+                  <span style={{ color: "rgba(255,255,255,.3)", fontFamily: FONT_DISPLAY, fontSize: 22 }}>{x.n}</span>
+                </div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 21, fontWeight: 600, marginTop: 16 }}>{x.t}</div>
+                <p style={{ color: "rgba(255,255,255,.7)", fontSize: 14, lineHeight: 1.55, marginTop: 8 }}>{x.d}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: "center", marginTop: 28 }}>
+            <a href="https://varietyvibesradio.com/music-submission/" target="_blank" rel="noopener noreferrer"
+              style={{ ...btn(C.rust), textDecoration: "none" }}>
+              Submit your music <ArrowRight size={16} />
+            </a>
+            <div style={{ marginTop: 14, color: "rgba(255,255,255,.5)", fontSize: 13 }}>
+              Radio, TV & app placement included on Artist and Label plans. Submission-based; subject to fit and review.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Old way vs Anthem way */}
+      <section style={{ ...wrap, padding: "64px 0 28px" }}>
+        <SectionHead kicker="Why Anthem" title="A full team — for the price of a few subscriptions" />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 18 }}>
+          <div style={{ ...card, borderColor: C.line }}>
+            <div style={{ color: C.soft, fontSize: 12, fontWeight: 700, letterSpacing: .6, textTransform: "uppercase" }}>The old way</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 32, fontWeight: 600, margin: "8px 0 14px" }}>Freelancers & scattered tools</div>
+            {["A marketer, designer & publicist on separate retainers",
+              "A handful of disconnected subscriptions to juggle",
+              "Distribution and promo billed piece by piece",
+              "Slow turnarounds and inconsistent branding",
+              "No path to real radio or TV airplay"].map(t => (
+              <div key={t} style={{ display: "flex", gap: 10, alignItems: "flex-start", color: C.soft, fontSize: 14, margin: "9px 0" }}>
+                <span style={{ color: C.soft }}>—</span> {t}
+              </div>
+            ))}
+          </div>
+          <div style={{ ...card, borderColor: C.rust, boxShadow: `0 28px 60px -40px ${C.rust}` }}>
+            <div style={{ color: C.rust, fontSize: 12, fontWeight: 700, letterSpacing: .6, textTransform: "uppercase" }}>The Anthem way</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 32, fontWeight: 600, margin: "8px 0 14px" }}>One studio, from $29/mo</div>
+            {["Eight AI specialists working in sync",
+              "One unified workspace — nothing scattered",
+              "Cover art, press, social & booking built in",
+              "Real Variety Vibes Radio & TV airplay (Artist & Label)",
+              "Fast, consistent output across every channel"].map(t => (
+              <div key={t} style={{ display: "flex", gap: 10, alignItems: "flex-start", color: C.ink, fontSize: 14, margin: "9px 0" }}>
+                <Check size={16} color={C.sage} style={{ flexShrink: 0, marginTop: 2 }} /> {t}
+              </div>
+            ))}
+            <button onClick={onLaunch} style={{ ...btn(C.rust), marginTop: 16 }}>Start your free trial <ArrowRight size={16} /></button>
+          </div>
         </div>
       </section>
 
@@ -3884,6 +3961,22 @@ function DistributionPanel({ profile }) {
   return (
     <div className="rise">
       <PageTitle title="Distribution" sub="Get your music onto Spotify, Apple Music, and everywhere else." />
+
+      <div style={{ ...card, marginBottom: 22, background: C.ink, color: "#fff", borderColor: C.ink }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <Radio size={20} color={C.clay} />
+          <div style={{ fontWeight: 700, fontSize: 17 }}>Get on Variety Vibes Radio & TV</div>
+        </div>
+        <p style={{ color: "rgba(255,255,255,.75)", fontSize: 14, lineHeight: 1.6, marginTop: 0 }}>
+          Submit your music for real airplay on Variety Vibes Radio, our TV channel on Roku & Firestick, and the
+          Variety Vibes app. Our programming team reviews every submission and responds within 14 business days.
+          You can also request interviews, promo, and a website feature.
+        </p>
+        <a href="https://varietyvibesradio.com/music-submission/" target="_blank" rel="noopener noreferrer"
+          style={{ ...btn(C.rust), textDecoration: "none", marginTop: 6 }}>
+          Submit your music <ArrowRight size={16} />
+        </a>
+      </div>
 
       <div style={{ ...card, marginBottom: 22 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>How it works</div>
