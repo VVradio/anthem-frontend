@@ -119,6 +119,18 @@ const api = {
     if (!r.ok) throw new Error("Could not delete");
     return r.json();
   },
+  async getWidget(token) {
+    const r = await fetch(`${API_BASE}/api/widget/me`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error("Could not load widget");
+    return r.json(); // { code, info }
+  },
+  async saveWidgetInfo(token, info) {
+    const r = await fetch(`${API_BASE}/api/widget/info`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ info }) });
+    if (!r.ok) throw new Error("Could not save");
+    return r.json();
+  },
   // Start a background job and poll until it finishes. The answer is generated
   // server-side, so it completes even if the user navigates away mid-request.
   async chatBackground(token, agentId, messages, { onJobId, feed } = {}) {
@@ -2547,7 +2559,7 @@ const WORK_TABS = {
   anr:     { label: "Plans",     kind: "saved-text" },
   booking: { label: "Outreach",  kind: "saved-text" },
   finance: { label: "Notes",     kind: "saved-text" },
-  chat:    { label: "Snippets",  kind: "saved-text" },
+  chat:    { label: "Website Widget", kind: "widget" },
 };
 
 const AGENT_SYSTEMS = {
@@ -2606,11 +2618,93 @@ function LockedAgent({ agent, plan, user, onUpgrade }) {
 
 // The per-agent "work" tab — shows what this agent has produced and saved
 // (Marblism-style Posts/Documents/Gallery). Pulls from the saved-items store.
+// Cleo's website-widget setup: embed snippet + custom info the bot answers from.
+function WidgetPanel({ auth }) {
+  const [code, setCode] = useState("");
+  const [info, setInfo] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (api.live() && auth?.token) {
+      api.getWidget(auth.token).then(d => { setCode(d.code || ""); setInfo(d.info || ""); })
+        .catch(() => {}).finally(() => setLoaded(true));
+    } else { setLoaded(true); }
+  }, [auth]);
+
+  const apiOrigin = API_BASE || "https://anthem-backend-production.up.railway.app";
+  const snippet = code ? `<script src="${apiOrigin}/api/widget/embed/${code}.js" async></script>` : "";
+
+  async function save() {
+    try { await api.saveWidgetInfo(auth.token, info); setSaved(true); setTimeout(() => setSaved(false), 1500); }
+    catch (e) { alert(e.message); }
+  }
+
+  if (!api.live()) return (
+    <div style={{ ...card, textAlign: "center", color: C.soft, padding: 30 }}>
+      Your website chat widget is available on the live site once you're signed in.
+    </div>
+  );
+  if (!loaded) return <div style={{ textAlign: "center", padding: 30 }}><Loader2 className="spin" /></div>;
+
+  return (
+    <div className="rise" style={{ display: "grid", gap: 16 }}>
+      <div style={{ ...card }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Add Cleo to your website</div>
+        <p style={{ color: C.soft, fontSize: 14, marginTop: 0, lineHeight: 1.5 }}>
+          Copy this snippet and paste it into your website's HTML, just before the closing <code>&lt;/body&gt;</code> tag
+          (most site builders have a "custom code" or "embed" option in settings). A chat bubble will appear in the
+          corner of your site, and fans can chat with Cleo 24/7.
+        </p>
+        <div style={{ background: C.ink, color: "#fff", borderRadius: 10, padding: "12px 14px", fontFamily: "monospace",
+          fontSize: 12, wordBreak: "break-all", position: "relative" }}>
+          {snippet}
+          <button onClick={() => { navigator.clipboard?.writeText(snippet); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+            style={{ position: "absolute", top: 8, right: 8, background: copied ? C.sage : C.rust, color: "#fff",
+              border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>
+            {copied ? "Copied ✓" : "Copy"}
+          </button>
+        </div>
+        <p style={{ color: C.soft, fontSize: 12, marginTop: 10 }}>
+          Works on Wix, Squarespace, WordPress, Shopify, Webflow, and any site where you can add HTML/embed code.
+        </p>
+      </div>
+
+      <div style={{ ...card }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>What should Cleo tell your fans?</div>
+        <p style={{ color: C.soft, fontSize: 14, marginTop: 0, lineHeight: 1.5 }}>
+          Add anything you want Cleo to know — upcoming shows, where to buy merch, your latest release, how to book you,
+          social links, FAQs. The more you add, the better Cleo answers. (Cleo also uses everything in your <strong>Brain</strong> and <strong>Artist Profile</strong>.)
+        </p>
+        <textarea value={info} onChange={e => { setInfo(e.target.value); }} rows={8}
+          placeholder={"e.g.\n- Next show: July 12 at The Echo, LA — tickets at example.com/tickets\n- New single 'Midnight' out now on all platforms\n- Merch: shop.example.com\n- Booking/press: booking@example.com\n- Follow: @yourname on Instagram & TikTok"}
+          style={{ ...inp, resize: "vertical", fontFamily: "inherit" }} />
+        <button onClick={save} style={{ ...btn(saved ? C.sage : C.rust), marginTop: 10 }}>
+          {saved ? <><Check size={16} /> Saved</> : "Save info for Cleo"}
+        </button>
+      </div>
+
+      <div style={{ ...card, background: `${C.teal}0d`, borderColor: `${C.teal}40` }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Test it first</div>
+        <p style={{ color: C.soft, fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+          Use the <strong>Chat</strong> tab above to talk to Cleo yourself and see how she answers — it's the same Cleo
+          your fans will chat with. Tweak the info above until her answers feel right.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
 function AgentWorkTab({ agent, auth, setSaved }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const cfg = WORK_TABS[agent.id] || { label: "Saved", kind: "saved-text" };
   const wantImages = cfg.kind === "saved-images";
+
+  // Cleo's work tab is the website-widget setup, not a saved list.
+  if (cfg.kind === "widget") return <WidgetPanel auth={auth} />;
 
   useEffect(() => {
     if (api.live() && auth?.token) {
@@ -4283,6 +4377,7 @@ const COMING_SOON = [
   { title: "Tour routing map", desc: "Plan smart tour routes and find venues along the way.", icon: MapPin, color: C.teal, tag: "Exploring" },
   { title: "AI mastering", desc: "Master your tracks to streaming-ready loudness in one click.", icon: Sparkles, color: C.gold, tag: "Exploring" },
   { title: "White-label platform", desc: "Run Anthem under your own brand — your logo, your colors, your domain. Built for labels & agencies.", icon: Sparkles, color: C.plum, tag: "Exploring" },
+  { title: "Live streaming", desc: "Go live to your fans right from Anthem — performances, Q&As, and listening parties.", icon: Music2, color: C.rust, tag: "Exploring" },
 ];
 
 function FeaturesPanel({ auth }) {
