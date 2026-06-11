@@ -2763,29 +2763,36 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   }, [agent.id, auth]);
 
   // Background mode: if a job was running when the user left this agent, resume it.
+  // Wait until saved history has loaded first, so we append to (not race with) it.
   useEffect(() => {
     let cancelled = false;
-    if (!api.live() || !auth?.token) return;
+    if (!loaded || !api.live() || !auth?.token) return;
     let jid = null;
     try { jid = localStorage.getItem(`anthem_job_${agent.id}`); } catch {}
     if (!jid) return;
     setBusy(true);
     (async () => {
       for (let i = 0; i < 180 && !cancelled; i++) {
-        await new Promise(r => setTimeout(r, 1000));
         let job;
-        try { job = await api.chatJob(auth.token, jid); } catch { continue; }
+        try { job = await api.chatJob(auth.token, jid); } catch { await new Promise(r => setTimeout(r, 1000)); continue; }
         if (job.status === "done") {
-          if (!cancelled) setMsgs(m => [...m, { role: "assistant", text: job.isSvg ? "" : (job.result || "…"), svg: job.isSvg ? job.result : undefined }]);
+          if (!cancelled) setMsgs(m => {
+            // Avoid duplicating if it's somehow already the last message.
+            const text = job.isSvg ? "" : (job.result || "…");
+            const last = m[m.length - 1];
+            if (last && last.role === "assistant" && last.text === text && !job.isSvg) return m;
+            return [...m, { role: "assistant", text, svg: job.isSvg ? job.result : undefined }];
+          });
           break;
         }
         if (job.status === "error") break;
+        await new Promise(r => setTimeout(r, 1000));
       }
       try { localStorage.removeItem(`anthem_job_${agent.id}`); } catch {}
       if (!cancelled) setBusy(false);
     })();
     return () => { cancelled = true; };
-  }, [agent.id, auth]);
+  }, [agent.id, auth, loaded]);
 
   // Auto-save the conversation whenever it changes (after the initial load).
   useEffect(() => {
