@@ -515,7 +515,7 @@ const api = {
 async function directCall(system, messages) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system,
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1500, system,
       messages: messages.map(m => ({ role: m.role, content: m.content })) }),
   });
   const data = await res.json();
@@ -523,35 +523,35 @@ async function directCall(system, messages) {
 }
 
 const MODELS = [
-  { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", vendor: "Anthropic" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", vendor: "Anthropic" },
   { id: "gpt-class", label: "GPT-class", vendor: "OpenAI" },
   { id: "gemini-class", label: "Gemini-class", vendor: "Google" },
   { id: "llama-class", label: "Llama-class", vendor: "Meta / open" },
 ];
 
 const AGENTS = [
-  { id: "anr", name: "Nora", role: "A&R · Career Strategist", icon: Disc3, color: C.rust, model: "claude-sonnet-4-20250514",
+  { id: "anr", name: "Nora", role: "A&R · Career Strategist", icon: Disc3, color: C.rust, model: "claude-sonnet-4-6",
     blurb: "Maps your release strategy, spots growth opportunities, and gives honest feedback on your direction.",
     sample: "Your last two singles leaned bedroom-pop but your streams spike on the upbeat tracks. I'd lead the next release with the high-energy single and stagger two slower B-sides. Want a 6-week rollout plan?" },
-  { id: "social", name: "Mia", role: "Social & Fan Engagement", icon: Megaphone, color: C.plum, model: "gpt-class",
+  { id: "social", name: "Mia", role: "Social & Fan Engagement", icon: Megaphone, color: C.plum, model: "claude-sonnet-4-6",
     blurb: "Plans content around your releases, writes captions in your voice, and keeps your fanbase warm between drops.",
     sample: "Release week plan ready: teaser Tuesday, snippet reel Thursday, drop-day countdown, and a fan Q&A Saturday. Want me to draft the caption for the snippet reel?" },
-  { id: "booking", name: "Theo", role: "Booking & Gig Outreach", icon: MapPin, color: C.teal, model: "claude-sonnet-4-20250514",
+  { id: "booking", name: "Theo", role: "Booking & Gig Outreach", icon: MapPin, color: C.teal, model: "claude-sonnet-4-6",
     blurb: "Finds venues and promoters, drafts booking pitches, and helps route a tour that actually makes sense.",
     sample: "Found 8 venues that fit your draw (200–400 cap) along the I-95 corridor. Drafted a booking pitch with your stats and EPK link. Want me to tailor it per venue?" },
-  { id: "legal", name: "Sol", role: "Royalties & Contracts", icon: Scale, color: C.gold, model: "claude-sonnet-4-20250514",
+  { id: "legal", name: "Sol", role: "Royalties & Contracts", icon: Scale, color: C.gold, model: "claude-sonnet-4-6",
     blurb: "Explains splits, reviews contracts in plain language, and flags terms that could cost you down the line.",
     sample: "Reviewed the distribution deal. The 30% commission is high and the term auto-renews for 3 years. Recommend negotiating to 15% and a 1-year term. Not legal advice — run it by a music attorney too." },
   { id: "image", name: "Iris", role: "Cover Art & Promo", icon: ImageIcon, color: C.clay, model: "gemini-class",
     blurb: "Generates single covers, promo graphics, and social visuals from a description, in your aesthetic.",
     sample: "Describe the mood and I'll make a cover — e.g. \"moody analog single cover, warm grain, lone figure under a streetlight, muted oranges.\"" },
-  { id: "blog", name: "Remy", role: "Press · Bio · Blog", icon: PenLine, color: C.sage, model: "claude-sonnet-4-20250514",
+  { id: "blog", name: "Remy", role: "Press · Bio · Blog", icon: PenLine, color: C.sage, model: "claude-sonnet-4-6",
     blurb: "Writes press releases, artist bios, and EPK copy that sound like you — ready to send to blogs and playlists.",
     sample: "Give me the release details and a few facts about you, and I'll draft a press release, a short bio, and a playlist pitch. What are we announcing?" },
-  { id: "chat", name: "Cleo", role: "Website Chat Widget", icon: MessageCircle, color: C.teal, model: "claude-sonnet-4-20250514",
+  { id: "chat", name: "Cleo", role: "Website Chat Widget", icon: MessageCircle, color: C.teal, model: "claude-sonnet-4-6",
     blurb: "A 24/7 chatbot for your site — answers fan FAQs, handles venue/booking inquiries, and captures leads while you sleep.",
     sample: "Hey! I'm the chat widget that lives on your site. Fans ask me about tour dates, merch, and releases; venues ask about booking. I capture their info and hand the hot ones to you. (Voice-call version coming as you scale.)" },
-  { id: "finance", name: "June", role: "Money & Royalties Coach", icon: Wallet, color: C.gold, model: "claude-sonnet-4-20250514",
+  { id: "finance", name: "June", role: "Money & Royalties Coach", icon: Wallet, color: C.gold, model: "claude-sonnet-4-6",
     blurb: "Helps you budget tours, make sense of royalty income, plan for taxes, and understand your numbers — in plain English.",
     sample: "Let's make your money make sense. I can budget a tour, break down where your streaming income comes from, or explain what to set aside for taxes. Heads up: I'm a financial literacy coach, not a licensed advisor — take big decisions to a real accountant. What are we looking at?" },
 ];
@@ -868,7 +868,7 @@ function Landing({ onLaunch, onCheckout }) {
             </p>
             <div className="rise" style={{ display: "flex", gap: 12, marginTop: 30, flexWrap: "wrap" }}>
               <button onClick={onLaunch} style={btn(C.rust, true)}>Start your free trial <ArrowRight size={18} /></button>
-              <a href="#reach" style={btn("transparent")}>See how it works</a>
+              <a href="#agents" style={btn("transparent")}>Meet the agents</a>
             </div>
             <div className="rise" style={{ display: "flex", gap: 26, marginTop: 36, color: C.soft, fontSize: 13, flexWrap: "wrap" }}>
               <Stat n="8" l="specialist agents" /><Stat n="24/7" l="radio airplay" />
@@ -1952,6 +1952,39 @@ function ProfilePanel({ profile, onSave, auth }) {
 }
 
 // Build a clean EPK one-pager and open the print dialog (save as PDF).
+// Turn any agent's chat reply into a clean, branded, downloadable PDF
+// (opens a print-styled page; the user picks "Save as PDF" in the print dialog).
+function downloadReplyAsPDF(agentName, text, titleHint) {
+  const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const bodyHtml = esc(text).split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+  const title = titleHint || `${agentName} — Anthem`;
+  const dateStr = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+  <style>
+    *{box-sizing:border-box} body{font-family:Georgia,'Times New Roman',serif;color:#1f1a16;margin:0;padding:56px;max-width:740px;margin:0 auto;line-height:1.65}
+    .head{border-bottom:3px solid #c2542d;padding-bottom:18px;margin-bottom:26px}
+    .brand{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:#c2542d;font-weight:bold;font-family:Georgia,serif}
+    h1{font-size:28px;margin:8px 0 4px;color:#1f1a16}
+    .meta{color:#6b6258;font-size:13px}
+    p{margin:0 0 14px;font-size:15px}
+    .foot{margin-top:36px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#6b6258}
+    @media print{body{padding:30px}}
+  </style></head><body>
+    <div class="head">
+      <div class="brand">Anthem · by Variety Vibes Radio &amp; TV</div>
+      <h1>${esc(title)}</h1>
+      <div class="meta">Prepared by ${esc(agentName)} · ${dateStr}</div>
+    </div>
+    ${bodyHtml}
+    <div class="foot">Generated with Anthem — varietyvibesradio.shop</div>
+  </body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) { alert("Please allow pop-ups to download this as a PDF."); return; }
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 400);
+}
+
 function downloadEPK(f) {
   const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const nl = s => esc(s).replace(/\n/g, "<br>");
@@ -2010,11 +2043,10 @@ function CampaignPanel({ auth, profile, onSetup }) {
     const b = brief.trim();
     if (!b || running) return;
     setRunning(true);
-    setResults(Object.fromEntries(CAMPAIGN_STEPS.map(s => [s.id, { status: "pending" }])));
+    setResults(Object.fromEntries(CAMPAIGN_STEPS.map(s => [s.id, { status: "running" }])));
     const ctx = profileToContext(profile);
-    // Fan the one brief out to each agent in sequence.
-    for (const step of CAMPAIGN_STEPS) {
-      setResults(r => ({ ...r, [step.id]: { status: "running" } }));
+    // Fire all agents in parallel — each updates its card as it finishes.
+    await Promise.all(CAMPAIGN_STEPS.map(async (step) => {
       try {
         const system = (AGENT_SYSTEMS[step.id] || "") + ctx;
         const baseMsg = [{ role: "user", content: step.prompt(b) }];
@@ -2037,7 +2069,7 @@ function CampaignPanel({ auth, profile, onSetup }) {
       } catch (e) {
         setResults(r => ({ ...r, [step.id]: { status: "error", text: e.message } }));
       }
-    }
+    }));
     setRunning(false);
   }
 
@@ -2086,8 +2118,13 @@ function CampaignPanel({ auth, profile, onSetup }) {
               )}
               {r?.text && <div style={{ fontSize: 13, lineHeight: 1.55, color: C.ink, whiteSpace: "pre-wrap" }}>{r.text}</div>}
               {r?.status === "done" && r?.text && (
-                <div style={{ marginTop: 10 }}>
+                <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <CopyButton text={r.text} color={s.color} />
+                  <button onClick={() => downloadReplyAsPDF(s.label, r.text, `${s.label} — ${s.sub}`)}
+                    title="Download as PDF"
+                    style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
+                    <FileText size={15} /> PDF
+                  </button>
                   {s.id === "social" && <ScheduleReminder defaultTitle="Post this to social" />}
                 </div>
               )}
@@ -2910,6 +2947,7 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState(agent.model);
   const [attached, setAttached] = useState(null); // { name, text }
+  const [attachedImage, setAttachedImage] = useState(null); // { name, mediaType, data, preview }
   const [loaded, setLoaded] = useState(false); // history loaded yet?
   const [savedTick, setSavedTick] = useState(false); // shows "Saved" briefly
   const [view, setView] = useState("chat"); // chat | work
@@ -3000,6 +3038,27 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
   // Agents that benefit from document uploads.
   const ALLOW_UPLOAD = ["legal", "blog", "anr"]; // Sol, Remy, Nora
   const canUpload = ALLOW_UPLOAD.includes(agent.id);
+  // Agents that benefit from image uploads (so you can attach a photo and say what to do with it).
+  const ALLOW_IMAGE_UPLOAD = ["social", "image", "blog"]; // Mia, Iris, Remy
+  const canUploadImage = ALLOW_IMAGE_UPLOAD.includes(agent.id);
+  const imageFileRef = useRef(null);
+
+  async function onImageFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("Please choose an image file."); return; }
+    if (file.size > 3.5 * 1024 * 1024) { alert("Please choose an image under 3.5MB."); return; }
+    try {
+      const b64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result).split(",")[1]);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+      setAttachedImage({ name: file.name, mediaType: file.type, data: b64, preview: `data:${file.type};base64,${b64}` });
+    } catch { alert("Couldn't read that image — try a different file."); }
+    e.target.value = "";
+  }
 
   async function onFile(e) {
     const file = e.target.files?.[0];
@@ -3037,20 +3096,36 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
 
   async function send() {
     const q = input.trim();
-    if ((!q && !attached) || busy) return;
+    if ((!q && !attached && !attachedImage) || busy) return;
     // Build the visible message and the text actually sent to the agent.
-    const displayText = attached ? `${q || "Take a look at this file:"}  📎 ${attached.name}` : q;
+    const displayText = attachedImage
+      ? (q || "Take a look at this image.")
+      : attached ? `${q || "Take a look at this file:"}  📎 ${attached.name}` : q;
     const sentText = attached
       ? `${q || "Please review this document."}\n\n--- Attached file: ${attached.name} ---\n${attached.text}`
-      : q;
-    const next = [...msgs, { role: "user", text: displayText }];
+      : (q || "Take a look at this image and tell me what you think.");
+    const next = [...msgs, attachedImage
+      ? { role: "user", text: displayText, img: attachedImage.preview }
+      : { role: "user", text: displayText }];
     setMsgs(next); setInput(""); setBusy(true);
-    // Payload uses the full file text; the on-screen history shows the short version.
-    const payload = next.map((m, idx) =>
-      idx === next.length - 1
-        ? { role: "user", content: sentText }
-        : { role: m.role === "user" ? "user" : "assistant", content: m.text });
+    // Payload uses the full file text or an image content block for the last turn;
+    // the on-screen history shows the short version.
+    const payload = next.map((m, idx) => {
+      if (idx === next.length - 1) {
+        if (attachedImage) {
+          // Claude vision format: an array with an image block and a text block.
+          return { role: "user", content: [
+            { type: "image", source: { type: "base64", media_type: attachedImage.mediaType, data: attachedImage.data } },
+            { type: "text", text: sentText },
+          ] };
+        }
+        return { role: "user", content: sentText };
+      }
+      return { role: m.role === "user" ? "user" : "assistant", content: m.text };
+    });
     setAttached(null);
+    const hadImage = !!attachedImage;
+    setAttachedImage(null);
     try {
       // The image agent (Iris) uses the real image API when live.
       if (agent.id === "image") {
@@ -3078,7 +3153,7 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
                             ...payload] : payload;
         // The visible feed (lean, no heavy image data) so the server can append
         // the answer and save it — making it survive even if the user leaves.
-        const leanFeed = next.map(m => ({ role: m.role, text: m.text || (m.img || m.svg ? "[generated image]" : "") }));
+        const leanFeed = next.map(m => ({ role: m.role, text: m.text ? m.text : (m.img || m.svg ? "[generated image]" : "") }));
         const data = await api.chatBackground(auth.token, agent.id, sent, {
           onJobId: (jid) => { try { localStorage.setItem(`anthem_job_${agent.id}`, jid); } catch {} },
           feed: leanFeed,
@@ -3197,23 +3272,25 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
             )}
             {m.img && (
               <div style={{ marginTop: 8 }}>
-                <img src={m.img} alt="Generated artwork" style={{ width: 320, maxWidth: "100%",
+                <img src={m.img} alt={m.role === "user" ? "Your upload" : "Generated artwork"} style={{ width: 320, maxWidth: "100%",
                   borderRadius: 14, border: `1px solid ${C.line}`, display: "block" }} />
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <button onClick={() => saveImage(m.img, "anthem-artwork.png")}
-                    style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
-                    <Download size={15} /> Download
-                  </button>
-                  <button onClick={() => {
-                      const item = { id: Date.now(), tool: `${agent.name} image`, text: m.img, when: new Date().toLocaleString() };
-                      setSaved?.(list => [item, ...(list || [])]);
-                      if (api.live() && auth?.token) api.addSaved(auth.token, `${agent.name} image`, m.img).catch(() => {});
-                    }}
-                    style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
-                    <Inbox size={15} /> Save
-                  </button>
-                  {agent.id === "social" && <PostMenu token={auth?.token} image={m.img} />}
-                </div>
+                {m.role !== "user" && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button onClick={() => saveImage(m.img, "anthem-artwork.png")}
+                      style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
+                      <Download size={15} /> Download
+                    </button>
+                    <button onClick={() => {
+                        const item = { id: Date.now(), tool: `${agent.name} image`, text: m.img, when: new Date().toLocaleString() };
+                        setSaved?.(list => [item, ...(list || [])]);
+                        if (api.live() && auth?.token) api.addSaved(auth.token, `${agent.name} image`, m.img).catch(() => {});
+                      }}
+                      style={{ ...btn("transparent"), fontSize: 13, padding: "8px 14px" }}>
+                      <Inbox size={15} /> Save
+                    </button>
+                    {agent.id === "social" && <PostMenu token={auth?.token} image={m.img} />}
+                  </div>
+                )}
               </div>
             )}
             {/* Copy + save + schedule actions on assistant text replies */}
@@ -3227,6 +3304,11 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
                   }}
                   style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
                   <Inbox size={15} /> Save
+                </button>
+                <button onClick={() => downloadReplyAsPDF(agent.name, displayText)}
+                  title="Download this reply as a PDF"
+                  style={{ ...btn("transparent"), fontSize: 13, padding: "8px 12px" }}>
+                  <FileText size={15} /> PDF
                 </button>
                 {(agent.id === "social" || agent.id === "blog") && (
                   <ScheduleReminder defaultTitle={agent.id === "social" ? "Post this to social" : "Publish this"} />
@@ -3254,6 +3336,18 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
         </div>
       )}
 
+      {/* Attached image chip — shows a thumbnail + filename, with a note to describe what to do with it */}
+      {attachedImage && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10,
+          background: C.cream, border: `1px solid ${C.line}`, borderRadius: 10, padding: "8px 12px", fontSize: 13 }}>
+          <img src={attachedImage.preview} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{attachedImage.name} — type what you want done with it below</span>
+          <button onClick={() => setAttachedImage(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.soft }}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
         {canUpload && (
           <>
@@ -3263,6 +3357,17 @@ function AgentPanel({ agent, auth, profile, setSaved }) {
               title="Upload a document (txt, pdf, docx)"
               style={{ ...btn("transparent"), opacity: busy ? .5 : 1 }}>
               <Download size={17} style={{ transform: "rotate(180deg)" }} />
+            </button>
+          </>
+        )}
+        {canUploadImage && (
+          <>
+            <input ref={imageFileRef} type="file" accept="image/*"
+              onChange={onImageFile} style={{ display: "none" }} />
+            <button onClick={() => imageFileRef.current?.click()} disabled={busy}
+              title="Upload a picture — then type what you want done with it"
+              style={{ ...btn("transparent"), opacity: busy ? .5 : 1 }}>
+              <ImageIcon size={17} />
             </button>
           </>
         )}
